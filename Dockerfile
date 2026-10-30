@@ -18,6 +18,9 @@ COPY --from=build /layers/dependencies/ ./
 COPY --from=build /layers/spring-boot-loader/ ./
 COPY --from=build /layers/snapshot-dependencies/ ./
 COPY --from=build /layers/application/ ./
+# 배포 워크플로가 커밋 SHA를 넘긴다. 앱은 app.commit으로 읽어 /ping에 싣는다(앞 계층 캐시를 깨지 않게 맨 끝에 둔다)
+ARG APP_COMMIT=unknown
+ENV APP_COMMIT=$APP_COMMIT
 USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]

@@ -10,6 +10,9 @@ spring:
     virtual:
       enabled: true
 
+app:
+  commit: ${APP_COMMIT:unknown}   # 이미지에 구운 커밋 SHA. /ping 응답에 실려 배포 확인에 쓴다
+
 management:
   endpoints:
     web:

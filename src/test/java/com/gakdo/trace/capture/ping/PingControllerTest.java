@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(PingController.class)
+@WebMvcTest(controllers = PingController.class, properties = "app.commit=test-sha")
 class PingControllerTest {
 
     @Autowired
@@ -20,6 +20,7 @@ class PingControllerTest {
         mockMvc.perform(get("/api/v1/captures/ping"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.service").value("capture-server"))
-                .andExpect(jsonPath("$.status").value("ok"));
+                .andExpect(jsonPath("$.status").value("ok"))
+                .andExpect(jsonPath("$.commit").value("test-sha"));
     }
 }
