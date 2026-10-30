@@ -44,14 +44,18 @@ jobs:
       packages: write
     outputs:
       image: ${{ steps.name.outputs.image }}
+      service: ${{ steps.name.outputs.service }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # GHCR 이미지 이름은 소문자만 된다 (조직 GAKDO → gakdo)
+      # 쿠버네티스 이름에는 밑줄(_)을 쓸 수 없어서 레포 이름의 _를 -로 바꾼다 (auth_server 레포 → auth-server 서비스·이미지)
       - name: 이미지 이름 정하기
         id: name
         run: |
-          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${APP}" >> "$GITHUB_ENV"
-          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${APP}" >> "$GITHUB_OUTPUT"
+          svc="${APP//_/-}"
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${svc}" >> "$GITHUB_ENV"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${svc}" >> "$GITHUB_OUTPUT"
+          echo "service=${svc}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         if: github.event_name != 'pull_request'
@@ -111,15 +115,16 @@ jobs:
         if: steps.token.outputs.ok == 'true'
         env:
           IMAGE: ${{ needs.image.outputs.image }}
+          SERVICE: ${{ needs.image.outputs.service }}
         working-directory: gitops
         run: |
           git config user.name "trace-ci"
           git config user.email "trace-ci@users.noreply.github.com"
           for i in 1 2 3; do
             git pull --rebase -q origin main
-            (cd overlays/school && kustomize edit set image "${APP}=${IMAGE}:${GITHUB_SHA}")
+            (cd overlays/school && kustomize edit set image "${SERVICE}=${IMAGE}:${GITHUB_SHA}")
             if git diff --quiet; then echo "이미 같은 태그입니다."; exit 0; fi
-            git commit -qam "deploy(${APP}): ${GITHUB_SHA::7}" -m "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+            git commit -qam "deploy(${SERVICE}): ${GITHUB_SHA::7}" -m "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
             if git push -q origin HEAD:main; then echo "gitops 갱신 완료"; exit 0; fi
             git reset -q --hard origin/main
             sleep $((i * 5))
