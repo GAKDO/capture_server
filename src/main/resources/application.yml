@@ -1,0 +1,21 @@
+# 공통 설정. 학교 클러스터 값(주소·비밀번호)은 gitops 레포의 ConfigMap trace-infra와 Secret trace-secrets가 환경 변수로 넣는다
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: capture-server
+  threads:
+    virtual:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true   # /actuator/health/liveness·readiness (쿠버네티스 프로브)

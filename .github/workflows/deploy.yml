@@ -1,0 +1,142 @@
+# 이미지를 만들어 GHCR에 올리고, main이면 gitops 레포의 이미지 태그를 바꿔 Argo CD가 학교 클러스터에 반영하게 한다.
+name: 배포
+
+# ─── 흐름 (블로그 deploy.yml에서 클러스터에 직접 배포하던 부분만 Argo CD 방식으로 바꿈) ───
+# [PR]           이미지 빌드만 해 보고 올리지 않음 (테스트는 backend-ci이 PR에서 따로 돈다)
+# [develop push] 테스트 → 이미지(:커밋SHA·:develop)를 GHCR에 올림. 배포하지 않음
+# [main push]    테스트 → 이미지(:커밋SHA·:latest) → gitops 레포 overlays/school의 이미지 태그를 커밋SHA로 바꿈
+#                → 학교 서버의 Argo CD가 그 커밋을 읽어 trace 네임스페이스에 반영(자동 동기화)
+# 필요한 값: Secret GITOPS_TOKEN(gitops 레포 Contents 쓰기만 준 fine-grained 토큰, 조직 Secret 하나로 공유).
+#            없으면 이미지까지만 올리고 gitops 갱신은 안내만 남긴다
+# ────────────────────────────────────────────────────────────
+on:
+  pull_request:
+    paths-ignore: ["**/*.md"]
+  push:
+    branches: [main, develop]
+    paths-ignore: ["**/*.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  APP: ${{ github.event.repository.name }}
+  GITOPS_REPO: ${{ github.repository_owner }}/gitops
+  KUSTOMIZE_VERSION: "5.7.1"
+
+jobs:
+  # main·develop에 합쳐진 결과를 이미지 전에 한 번 더 테스트한다. PR에서는 backend-ci이 따로 돈다
+  test:
+    name: 테스트
+    if: github.event_name != 'pull_request'
+    uses: ./.github/workflows/backend-ci.yml
+    secrets: inherit
+
+  image:
+    name: 이미지 빌드
+    needs: test
+    # PR에서는 test가 건너뛰어지므로, 건너뜀도 통과로 본다
+    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # GHCR 이미지 이름은 소문자만 된다 (조직 GAKDO → gakdo)
+      - name: 이미지 이름 정하기
+        id: name
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${APP}" >> "$GITHUB_ENV"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${APP}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # 학교 클러스터는 amd64라 한 가지만 만든다(블로그는 Oracle ARM VM 때문에 arm64도 만들었다)
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE) || '' }}
+            ${{ github.ref == 'refs/heads/develop' && format('{0}:develop', env.IMAGE) || '' }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # gitops 레포의 이미지 태그를 바꾼다. 클러스터에는 접속하지 않는다(실제 반영은 Argo CD)
+  gitops:
+    name: gitops 이미지 태그 갱신
+    needs: image
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # 같은 gitops 레포에 여러 서버가 동시에 커밋하지 않게 조직 전체에서 한 줄로 세운다
+    concurrency:
+      group: gitops-bump
+      cancel-in-progress: false
+    env:
+      GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+    steps:
+      - name: 토큰 확인
+        id: token
+        run: |
+          if [ -z "$GITOPS_TOKEN" ]; then
+            echo "::notice::Secret GITOPS_TOKEN이 없어 gitops 갱신을 건너뜁니다. 이미지는 GHCR에 올라갔습니다."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: steps.token.outputs.ok == 'true'
+        with:
+          repository: ${{ env.GITOPS_REPO }}
+          token: ${{ secrets.GITOPS_TOKEN }}
+          ref: main
+          path: gitops
+      - name: kustomize 설치
+        if: steps.token.outputs.ok == 'true'
+        run: curl -sSL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz" | sudo tar xz -C /usr/local/bin
+      # 다른 서버가 먼저 커밋했으면 받아서 다시 시도한다(최대 3번)
+      - name: 이미지 태그 바꾸고 커밋
+        if: steps.token.outputs.ok == 'true'
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}
+        working-directory: gitops
+        run: |
+          git config user.name "trace-ci"
+          git config user.email "trace-ci@users.noreply.github.com"
+          for i in 1 2 3; do
+            git pull --rebase -q origin main
+            (cd overlays/school && kustomize edit set image "${APP}=${IMAGE}:${GITHUB_SHA}")
+            if git diff --quiet; then echo "이미 같은 태그입니다."; exit 0; fi
+            git commit -qam "deploy(${APP}): ${GITHUB_SHA::7}" -m "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
+            if git push -q origin HEAD:main; then echo "gitops 갱신 완료"; exit 0; fi
+            git reset -q --hard origin/main
+            sleep $((i * 5))
+          done
+          echo "::error::gitops 레포에 푸시하지 못했습니다"; exit 1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: always() && (vars.DISCORD_ENABLED == 'true' || vars.TELEGRAM_ENABLED == 'true')
+        with:
+          path: self
+      - name: 알림 (Discord·텔레그램)
+        if: always() && (vars.DISCORD_ENABLED == 'true' || vars.TELEGRAM_ENABLED == 'true')
+        uses: ./self/.github/actions/notify
+        with:
+          discord-webhook-url: ${{ vars.DISCORD_ENABLED == 'true' && secrets.DISCORD_WEBHOOK_URL || '' }}
+          telegram-bot-token: ${{ vars.TELEGRAM_ENABLED == 'true' && secrets.TELEGRAM_BOT_TOKEN || '' }}
+          telegram-chat-id: ${{ vars.TELEGRAM_ENABLED == 'true' && secrets.TELEGRAM_CHAT_ID || '' }}
+          title: "[${{ github.event.repository.name }}] 배포 ${{ job.status == 'success' && '요청됨' || '실패' }}"
+          description: "${{ github.sha }} → gitops overlays/school (Argo CD가 동기화)"
+          status: ${{ job.status == 'success' && 'success' || 'failure' }}
+          url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

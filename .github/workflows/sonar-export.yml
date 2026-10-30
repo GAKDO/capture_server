@@ -1,0 +1,132 @@
+# (블로그 sonar-export.yml을 옮김)
+# SonarQube 이슈·보안 핫스팟 목록 내보내기 (수동 실행: Actions → SonarQube 이슈 내보내기 → Run workflow).
+# 학교 SonarQube는 러너에서만 닿아서, 웹 화면 대신 API로 받아 로그와 아티팩트(sonar-issues)로 남긴다.
+# 토큰은 Secret SONAR_TOKEN, 주소는 Secret SONAR_HOST_URL(분석 단계와 같다). 토큰은 로그에 찍지 않는다.
+name: SonarQube 이슈 내보내기
+
+# 언제 도나: 수동 실행만. 코드·배포에 영향이 없고, 품질 분석 결과를 읽어 오기만 한다
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 프로젝트 키 (비우면 레포 변수 SONAR_PROJECT_KEY)
+        required: false
+
+# 저장소를 읽지 않고 GITHUB_TOKEN도 쓰지 않는다(아티팩트는 런너 토큰으로 올라감)
+permissions: {}
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+      PROJECT: ${{ inputs.project || vars.SONAR_PROJECT_KEY || format('trace-{0}', github.event.repository.name) }}
+    steps:
+      # SonarQube API에서 품질 게이트 → 새 코드 커버리지 부족 파일 → 이슈 → 보안 핫스팟 순서로 받아 로그와 파일로 남긴다
+      - name: 이슈·핫스팟 받기
+        shell: python
+        run: |
+          import base64, json, os, sys, urllib.error, urllib.parse, urllib.request
+          token, host, project = os.environ["SONAR_TOKEN"], os.environ["SONAR_HOST_URL"].rstrip("/"), os.environ["PROJECT"]
+          if not token or not host:
+              print("::error::Secret SONAR_TOKEN·SONAR_HOST_URL이 필요합니다"); sys.exit(1)
+          if not host.startswith("https://"):
+              # 학교 SonarQube는 http만 연다. 분석 단계(backend-ci)도 같은 토큰을 같은 주소로 보낸다
+              print("::warning::SONAR_HOST_URL이 https가 아니라 토큰이 암호화되지 않고 전송됩니다")
+          auth = "Basic " + base64.b64encode(f"{token}:".encode()).decode()
+
+          def origin(url):
+              u = urllib.parse.urlsplit(url)
+              return u.scheme.lower(), u.hostname, u.port or {"http": 80, "https": 443}.get(u.scheme.lower())
+
+          class SameOriginRedirect(urllib.request.HTTPRedirectHandler):
+              # 다른 주소로 넘기는 응답을 따라가면 토큰 머리글이 그쪽으로 간다. 같은 서버 안에서만 따라간다
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  target = urllib.parse.urljoin(req.full_url, newurl)
+                  if origin(req.full_url) != origin(target):
+                      raise urllib.error.HTTPError(req.full_url, code, "다른 서버로 넘기는 응답은 따라가지 않습니다", headers, fp)
+                  return super().redirect_request(req, fp, code, msg, headers, target)
+
+          opener = urllib.request.build_opener(SameOriginRedirect())
+
+          def get(path, **params):
+              req = urllib.request.Request(f"{host}{path}?{urllib.parse.urlencode(params)}", headers={"Authorization": auth})
+              with opener.open(req, timeout=30) as r:
+                  return json.load(r)
+
+          # 검색 API는 앞 10,000건까지만 준다. 넘으면 그만 받고 알린다(지금은 수백 건)
+          LIMIT = 10_000
+
+          def pages(path, key, **params):
+              out, p = [], 1
+              while True:
+                  d = get(path, ps=500, p=p, **params)
+                  out += d[key]
+                  total = d.get("paging", d).get("total", 0)
+                  if len(out) >= LIMIT and total > LIMIT:
+                      print(f"::warning::{path} 결과 {total}건 중 앞 {LIMIT}건만 받았습니다")
+                      return out
+                  if len(out) >= total or not d[key]: return out
+                  p += 1
+
+          # 규칙 판정은 서버(분석기) 판마다 달라서, 로컬에서 같은 판으로 재현할 수 있게 남긴다
+          try:
+              with opener.open(urllib.request.Request(f"{host}/api/server/version", headers={"Authorization": auth}), timeout=30) as r:
+                  print(f"SonarQube {r.read().decode().strip()}")
+          except (urllib.error.URLError, TimeoutError):
+              print("::warning::SonarQube 서버 판을 받지 못했습니다. 이슈 조회는 계속합니다")
+          # 품질 게이트가 왜 실패했는지(조건별 실제값·기준값) 먼저 찍는다
+          try:
+              gate = get("/api/qualitygates/project_status", projectKey=project)["projectStatus"]
+              print(f'GATE\t{gate["status"]}\tperiod={gate.get("period", {})}')
+              for c in gate.get("conditions", []):
+                  print(f'GATE\t{c["status"]}\t{c["metricKey"]}\t{c.get("comparator", "")}\t{c.get("errorThreshold", "")}\tactual={c.get("actualValue", "")}')
+          except urllib.error.HTTPError as e:
+              print(f"::warning::품질 게이트 상태를 받지 못했습니다(HTTP {e.code})")
+          # 새 코드 커버리지가 기준에 못 미칠 때 어디에 테스트를 더할지: 새 코드에서 덮지 못한 줄이 많은 파일부터
+          try:
+              files = pages("/api/measures/component_tree", "components", component=project, qualifiers="FIL",
+                            metricKeys="new_uncovered_lines,new_lines_to_cover")
+              def new_value(c, metric):
+                  for m in c.get("measures", []):
+                      if m["metric"] == metric:
+                          v = (m.get("period") or (m.get("periods") or [{}])[0]).get("value")
+                          return int(float(v)) if v else 0
+                  return 0
+              rows = sorted(((new_value(c, "new_uncovered_lines"), new_value(c, "new_lines_to_cover"), c["path"]) for c in files), reverse=True)
+              for miss, total, path in [r for r in rows if r[0] > 0][:40]:
+                  print(f"COVER\t{miss}\t{total}\t{path}")
+          except urllib.error.HTTPError as e:
+              print(f"::warning::새 코드 커버리지를 받지 못했습니다(HTTP {e.code})")
+          except (urllib.error.URLError, TimeoutError):
+              print("::warning::새 코드 커버리지를 받지 못했습니다(네트워크 오류)")
+          issues = pages("/api/issues/search", "issues", componentKeys=project, resolved="false")
+          try:
+              hotspots = pages("/api/hotspots/search", "hotspots", projectKey=project, status="TO_REVIEW")
+          except urllib.error.HTTPError as e:
+              # 핫스팟 조회는 프로젝트 Browse 권한이 있어야 한다. 분석 전용 토큰이면 403이라 이슈만 남긴다
+              hint = " 토큰에 프로젝트 Browse 권한이 필요합니다" if e.code == 403 else ""
+              print(f"::warning::핫스팟을 받지 못했습니다(HTTP {e.code}).{hint}")
+              hotspots = []
+          os.makedirs("sonar", exist_ok=True)
+          json.dump(issues, open("sonar/issues.json", "w"), ensure_ascii=False, indent=1)
+          json.dump(hotspots, open("sonar/hotspots.json", "w"), ensure_ascii=False, indent=1)
+
+          def where(x):
+              return f'{x["component"].split(":", 1)[-1]}:{x.get("line", "")}'
+          print(f"프로젝트 {project}: 이슈 {len(issues)}건, 검토할 핫스팟 {len(hotspots)}건")
+          # 로그에서 바로 읽도록 한 줄씩: 영향(품질·심각도) 규칙 위치 메시지
+          for i in sorted(issues, key=lambda x: (x.get("type", ""), x.get("severity", ""), x["rule"])):
+              impacts = ",".join(f'{m["softwareQuality"]}/{m["severity"]}' for m in i.get("impacts", []))
+              print(f'ISSUE\t{i.get("type", "")}\t{i.get("severity", "")}\t{impacts}\t{i["rule"]}\t{where(i)}\t{i["message"]}')
+          for h in hotspots:
+              print(f'HOTSPOT\t{h.get("vulnerabilityProbability", "")}\t{h.get("securityCategory", "")}\t{h.get("ruleKey", "")}\t{where(h)}\t{h["message"]}')
+      # 받은 JSON을 7일 동안 Actions 화면에서 내려받을 수 있게 올린다
+      - name: 아티팩트로 올리기
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sonar-issues
+          path: sonar/
+          retention-days: 7
