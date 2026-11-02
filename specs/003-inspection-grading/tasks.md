@@ -10,3 +10,5 @@
 - [x] T008 GET inspection + 범위(ADMIN·본인 렌탈) + WebMvc 시험
 - [x] T009 Testcontainers 흐름 시험: 출고 → 수령 → 반납, NEW·EXISTING·등급·이벤트
 - [x] T010 `./mvnw verify`, docs ddl.md·V1__init.sql·decisions.md 반영, PR
+- [x] T011 (후속) `/media`: trace-derived 사전 서명 GET, 범위·404 시험
+- [x] T012 (후속) 리스너 재시도에서 `AmqpRejectAndDontRequeueException`(원인 사슬 포함) 제외 + 단위 시험

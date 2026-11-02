@@ -202,6 +202,21 @@ class InspectionFlowIntegrationTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/v1/captures/checkpoints/" + CP_RET + "/inspection").with(customer("Other0HLv6QRbDILPWOcz")))
                 .andExpect(status().isForbidden());
+
+        // 3D 트윈 텍스처: 정합 이벤트의 textureKeys가 trace-derived 사전 서명 GET URL로 나간다
+        JsonNode media = json.readTree(mvc.perform(get("/api/v1/captures/checkpoints/" + CP_RET + "/media")
+                .with(customer(RENTAL))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(media.get("checkpointId").asText()).isEqualTo(CP_RET);
+        assertThat(media.get("expiresAt").isNull()).isFalse();
+        assertThat(media.get("textures")).hasSize(1);
+        assertThat(media.get("textures").get(0).get("face").asText()).isEqualTo("TOP");
+        assertThat(media.get("textures").get(0).get("url").asText())
+                .startsWith("https://minio.test/trace-derived/textures/" + retSet + "/TOP.jpg?");
+        assertThat(media.get("crops")).isEmpty();
+        mvc.perform(get("/api/v1/captures/checkpoints/" + CP_RET + "/media").with(customer("Other0HLv6QRbDILPWOcz")))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/captures/checkpoints/CpNoneQOlTkKj6mOecAQt/media").with(admin()))
+                .andExpect(status().isNotFound());
     }
 
     @Test

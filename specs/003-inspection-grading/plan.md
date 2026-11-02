@@ -27,7 +27,7 @@ inspection/
 
 - `comparison/`(C)은 그대로 부른다: `new ViewComparator(MatchRule.V1).compare(prev, current)`.
 - 세트 행 잠금(`CaptureSetRepository.findForUpdate`)으로 탐지 POST와 정합 이벤트가 동시에 와도 한 번만 등급을 매긴다.
-- 이벤트는 CA1과 같이 채널 트랜잭션(DB 커밋과 함께). 소비 실패는 3회 재시도 뒤 `trace.dlx` → `trace.capture.inspected.dlq`(RE1 규칙).
+- 이벤트는 CA1과 같이 채널 트랜잭션(DB 커밋과 함께). 소비 실패는 3회 재시도 뒤(형식 오류로 던진 `AmqpRejectAndDontRequeueException`은 원인 사슬에 있어도 재시도 없이 바로) `trace.dlx` → `trace.capture.inspected.dlq`(RE1 규칙).
 
 ## 흐름
 
@@ -41,4 +41,4 @@ inspection/
 
 ## PR 나누기
 
-코드 400줄 기준으로 PR 1개(탐지 저장 + 정합 저장 + 등급 + 조회)를 시도하고, 넘치면 저장(1)·등급과 조회(2)로 나눈다. `/media`는 다음 PR.
+코드 400줄 기준으로 PR 1개(탐지 저장 + 정합 저장 + 등급 + 조회)를 시도하고, 넘치면 저장(1)·등급과 조회(2)로 나눈다. `/media`와 재시도 정책은 후속 PR.

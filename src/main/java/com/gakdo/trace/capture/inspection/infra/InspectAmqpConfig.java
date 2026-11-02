@@ -1,11 +1,17 @@
 package com.gakdo.trace.capture.inspection.infra;
 
+import java.util.Map;
+
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.Declarables;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.amqp.RabbitRetryTemplateCustomizer;
+import org.springframework.retry.policy.SimpleRetryPolicy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -33,5 +39,20 @@ public class InspectAmqpConfig {
         Binding inspected = BindingBuilder.bind(queue).to(events).with(InspectEvent.ROUTING_KEY);
         Binding dead = BindingBuilder.bind(dlq).to(dlx).with(DEAD_KEY);
         return new Declarables(dlx, queue, dlq, inspected, dead);
+    }
+
+    /**
+     * 리스너 재시도(max-attempts)에서 '다시 해도 안 되는' 실패는 뺀다. 형식 오류로 던진
+     * AmqpRejectAndDontRequeueException(원인 사슬 포함)은 바로 DLQ로 가고, 그 밖의 예외만 재시도한다.
+     */
+    @Bean
+    RabbitRetryTemplateCustomizer noRetryOnReject(
+            @Value("${spring.rabbitmq.listener.simple.retry.max-attempts:3}") int maxAttempts) {
+        return (target, template) -> {
+            if (target == RabbitRetryTemplateCustomizer.Target.LISTENER) {
+                template.setRetryPolicy(new SimpleRetryPolicy(maxAttempts,
+                        Map.of(AmqpRejectAndDontRequeueException.class, false), true, true));
+            }
+        };
     }
 }

@@ -39,6 +39,12 @@ public class FakePhotoStorage implements PhotoStorage {
     }
 
     @Override
+    public ViewUrl presignDerivedGet(String objectKey, Duration ttl) {
+        return new ViewUrl("https://minio.test/trace-derived/" + objectKey + "?X-Amz-Signature=fake"
+                + issued.incrementAndGet(), OffsetDateTime.now(ZoneOffset.UTC).plus(ttl));
+    }
+
+    @Override
     public Optional<String> sha256Of(String objectKey) {
         return Optional.ofNullable(objects.get(objectKey));
     }

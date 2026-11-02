@@ -81,9 +81,14 @@ inspect-worker의 `trace.inspect.completed`를 큐 `trace.capture.inspected`로 
 - `inspection.grade_result.capture_set_id bigint REFERENCES capture.capture_set(id)`, `unjudgeable_faces jsonb NOT NULL DEFAULT '[]'` 추가
 - `capture.capture_set.detections_received_at timestamptz` 추가(부스 탐지를 받았는지)
 
+## 후속: 3D 트윈 보기 URL (FR-RPT-01)
+
+- `GET /api/v1/captures/checkpoints/{checkpointId}/media`는 검사 결과 조회와 같은 범위(ADMIN·본인 렌탈 고객 로그인)로, 정합 이벤트의 `textureKeys`(버킷 `trace-derived`, `MINIO_DERIVED_BUCKET`)를 면마다 사전 서명 GET URL(`app.storage.view-ttl`, 10분)로 준다. 공개 주소(`MINIO_PUBLIC_BASE`)가 있으면 앞부분만 바꾼다.
+- 시점이 없으면 404, 남의 렌탈이면 403. 텍스처가 없는 면은 목록에 없다.
+
 ## 범위 밖
 
-텍스처·크롭 보기 URL(`/media`, 다음 PR), 사람 수정(HUMAN) 흠집, 등급 재계산 API, LightGlue 보정(ML2).
+흠집 크롭 이미지(만드는 곳이 아직 없어 `/media`의 crops는 빈 목록), 사람 수정(HUMAN) 흠집, 등급 재계산 API, LightGlue 보정(ML2).
 
 ## 성공 기준
 
