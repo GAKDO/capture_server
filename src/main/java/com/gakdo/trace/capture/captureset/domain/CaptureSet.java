@@ -69,6 +69,10 @@ public class CaptureSet {
     @Column(name = "skipped_faces", nullable = false, columnDefinition = "jsonb")
     private Map<Face, String> skippedFaces = new EnumMap<>(Face.class);
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "device", updatable = false, columnDefinition = "jsonb")
+    private DeviceModel device;
+
     @Column(name = "completion_key", length = 128)
     private String completionKey;
 
@@ -107,6 +111,12 @@ public class CaptureSet {
      */
     public static CaptureSet open(String rentalId, String checkpointId, CaptureSource source, String boothId,
             List<PhotoSpec> specs) {
+        return open(rentalId, checkpointId, source, boothId, null, specs);
+    }
+
+    /** device는 찍은 기기의 기종·치수. 없으면 null(inspect-worker가 기본 기종으로 펼친다). */
+    public static CaptureSet open(String rentalId, String checkpointId, CaptureSource source, String boothId,
+            DeviceModel device, List<PhotoSpec> specs) {
         List<FieldError> errors = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (int i = 0; i < specs.size(); i++) {
@@ -132,6 +142,7 @@ public class CaptureSet {
         set.checkpointId = checkpointId;
         set.source = source;
         set.boothId = boothId;
+        set.device = device;
         set.status = SetStatus.UPLOADING;
         set.quality = Quality.OK;
         set.createdAt = Times.now();
@@ -260,5 +271,9 @@ public class CaptureSet {
 
     public List<Photo> getPhotos() {
         return photos;
+    }
+
+    public DeviceModel getDevice() {
+        return device;
     }
 }

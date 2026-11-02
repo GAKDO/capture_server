@@ -55,7 +55,7 @@ public class CaptureSetController {
                         p.contentType()))
                 .toList();
         CaptureSetCreateResponse body = service.create(Caller.from(jwt), request.rentalId(), request.checkpointId(),
-                request.source(), photos);
+                request.source(), request.device() == null ? null : request.device().toDomain(), photos);
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 

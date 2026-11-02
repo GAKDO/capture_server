@@ -31,6 +31,7 @@ import com.gakdo.trace.capture.captureset.domain.Camera;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet.PhotoSpec;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
+import com.gakdo.trace.capture.captureset.domain.DeviceModel;
 import com.gakdo.trace.capture.captureset.domain.CompletionCheck;
 import com.gakdo.trace.capture.captureset.domain.CompletionCheck.PhotoState;
 import com.gakdo.trace.capture.captureset.domain.Face;
@@ -78,7 +79,7 @@ public class CaptureSetService {
 
     @Transactional
     public CaptureSetCreateResponse create(Caller caller, String rentalId, String checkpointId, CaptureSource source,
-            List<NewPhoto> photos) {
+            DeviceModel device, List<NewPhoto> photos) {
         caller.requireCapturer();
         String boothId = null;
         if (caller.isBooth()) {
@@ -91,7 +92,7 @@ public class CaptureSetService {
             throw Caller.outOfScope();
         }
 
-        CaptureSet set = CaptureSet.open(rentalId, checkpointId, source, boothId,
+        CaptureSet set = CaptureSet.open(rentalId, checkpointId, source, boothId, device,
                 photos.stream().map(NewPhoto::spec).toList());
         sets.save(set);
 
@@ -250,7 +251,7 @@ public class CaptureSetService {
                 .toList();
         return new CaptureUploadedEvent(CaptureUploadedEvent.SCHEMA_VERSION, PublicIds.next(), Times.now(),
                 set.getRentalId(), set.getCheckpointId(), set.getPublicId(), set.getSource(),
-                set.getSource() == CaptureSource.PHONE, photos, Map.copyOf(set.getSkippedFaces()));
+                set.getSource() == CaptureSource.PHONE, photos, set.getDevice(), Map.copyOf(set.getSkippedFaces()));
     }
 
     /** 같은 키에 같은 본문인지 가리는 해시. 키 순서와 상관없이 같은 값이 나오게 정렬한다. */
