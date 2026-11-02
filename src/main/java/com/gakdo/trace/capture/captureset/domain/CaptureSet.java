@@ -80,6 +80,9 @@ public class CaptureSet {
     @Column(name = "completion_response", columnDefinition = "jsonb")
     private Map<String, Object> completionResponse;
 
+    @Column(name = "detections_received_at")
+    private OffsetDateTime detectionsReceivedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -161,6 +164,45 @@ public class CaptureSet {
         this.completionKey = key;
         this.completionRequestSha256 = requestSha256;
         this.updatedAt = now;
+    }
+
+    /** 부스 탐지를 받았다(CA2). 부스 세트는 정합과 탐지가 모두 와야 등급을 매긴다. */
+    public void markDetectionsReceived() {
+        this.detectionsReceivedAt = Times.now();
+        this.updatedAt = detectionsReceivedAt;
+    }
+
+    /** 정합 결과를 받았다(CA2): UPLOADED → INSPECTED. */
+    public void markInspected() {
+        if (status != SetStatus.UPLOADED) {
+            throw new IllegalStateException("완료된 세트만 검사 결과를 받는다: " + status);
+        }
+        this.status = SetStatus.INSPECTED;
+        this.updatedAt = Times.now();
+    }
+
+    /** 판정할 수 있는 면이 하나도 없다(CA2). 등급 없이 INSPECTED에 머물고 다시 찍어야 한다. */
+    public void markUnjudgeable() {
+        this.quality = Quality.UNJUDGEABLE;
+        this.updatedAt = Times.now();
+    }
+
+    /** 등급을 매겼다(CA2): INSPECTED → GRADED. 이후 부스 탐지는 409. */
+    public void markGraded() {
+        if (status != SetStatus.INSPECTED) {
+            throw new IllegalStateException("검사 결과를 받은 세트만 등급을 매긴다: " + status);
+        }
+        this.status = SetStatus.GRADED;
+        this.quality = Quality.OK;
+        this.updatedAt = Times.now();
+    }
+
+    public OffsetDateTime getDetectionsReceivedAt() {
+        return detectionsReceivedAt;
+    }
+
+    public Long getId() {
+        return id;
     }
 
     /** 같은 Idempotency-Key로 다시 오면 돌려줄 첫 응답(JSON 객체). */
