@@ -143,7 +143,7 @@ public class S3PhotoStorage implements PhotoStorage {
         }
         URI uri = URI.create(trimmed);
         if (!("http".equals(uri.getScheme()) || "https".equals(uri.getScheme())) || uri.getHost() == null
-                || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+                || uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null) {
             throw new IllegalStateException("MINIO_PUBLIC_BASE는 http(s)://호스트[:포트][/경로] 형태여야 합니다: " + base);
         }
         return trimmed;

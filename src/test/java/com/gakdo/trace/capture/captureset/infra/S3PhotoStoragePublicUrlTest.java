@@ -39,5 +39,8 @@ class S3PhotoStoragePublicUrlTest {
                 .isInstanceOf(IllegalStateException.class);
         assertThatThrownBy(() -> S3PhotoStorage.normalizeBase("ftp://gakdo.site"))
                 .isInstanceOf(IllegalStateException.class);
+        // 사용자 정보는 폰에 돌려주는 URL에 그대로 실리므로 받지 않는다
+        assertThatThrownBy(() -> S3PhotoStorage.normalizeBase("https://user:pw@gakdo.site"))
+                .isInstanceOf(IllegalStateException.class);
     }
 }
