@@ -380,7 +380,130 @@ class CaptureSetApiTest extends WebTestBase {
                 .andExpect(jsonPath("$.photos[1].uploaded").value(false));
     }
 
+    // ── 업로드 URL 다시 받기 (contracts reissueUploadUrls, 11/2 결정) ──
+
+    @Test
+    @DisplayName("URL이 만료되면 세트를 새로 만들지 않고 남은 사진 전부의 새 10분 PUT URL을 세트 생성과 같은 형식으로 받는다")
+    void reissueAfterExpiry() throws Exception {
+        JsonNode first = created(booth(), boothBody(List.of("SCR1")));
+        String setId = first.get("captureSetId").asText();
+        JsonNode original = first.get("uploads");
+
+        JsonNode uploads = reissue(setId, booth(), null).andExpect(status().isOk()).andReturn().getResponse()
+                .getContentAsString().transform(this::tree).get("uploads");
+        assertThat(uploads).hasSize(original.size());
+        for (int i = 0; i < uploads.size(); i++) {
+            JsonNode u = uploads.get(i);
+            JsonNode o = original.get(i);
+            assertThat(u.get("face")).isEqualTo(o.get("face"));
+            assertThat(u.get("light")).isEqualTo(o.get("light"));
+            assertThat(u.get("camera")).isEqualTo(o.get("camera"));
+            assertThat(u.get("method").asText()).isEqualTo("PUT");
+            assertThat(u.get("headers")).isEqualTo(o.get("headers"));
+            assertThat(u.get("url").asText()).isNotEqualTo(o.get("url").asText());
+            assertThat(java.time.OffsetDateTime.parse(u.get("expiresAt").asText()))
+                    .isAfterOrEqualTo(java.time.OffsetDateTime.parse(o.get("expiresAt").asText()))
+                    .isBefore(java.time.OffsetDateTime.now().plusMinutes(11));
+        }
+        // 빈 본문 {}도 남은 사진 전부
+        reissue(setId, booth(), "{}").andExpect(status().isOk())
+                .andExpect(jsonPath("$.uploads.length()").value(original.size()));
+        mvc.perform(get("/api/v1/captures/sets/" + setId).with(admin()))
+                .andExpect(jsonPath("$.status").value("UPLOADING"));
+    }
+
+    @Test
+    @DisplayName("이미 올라간 사진은 다시 주지 않고, photos를 주면 그 사진만(세트 순서), 모두 올라갔으면 빈 배열")
+    void reissueSkipsUploaded() throws Exception {
+        String setId = created(capture(), phoneBody()).get("captureSetId").asText();
+        storage.put("captures/" + setId + "/TOP-ROOM-PHONE.jpg", SHA);
+
+        JsonNode all = tree(reissue(setId, capture(), null).andExpect(status().isOk()).andReturn().getResponse()
+                .getContentAsString()).get("uploads");
+        assertThat(all).hasSize(PHONE_FACES.size()); // 8장 중 TOP 제외
+        assertThat(all).noneMatch(u -> u.get("face").asText().equals("TOP"));
+
+        String picked = "{\"photos\":[" + ref("SCR1", "OFF", "PHONE") + "," + ref("TOP", "ROOM", "PHONE") + ","
+                + ref("BOT", "ROOM", "PHONE") + "]}";
+        reissue(setId, capture(), picked).andExpect(status().isOk())
+                .andExpect(jsonPath("$.uploads.length()").value(2))
+                .andExpect(jsonPath("$.uploads[0].face").value("BOT"))
+                .andExpect(jsonPath("$.uploads[1].face").value("SCR1"))
+                .andExpect(jsonPath("$.uploads[1].light").value("OFF"));
+
+        uploadAll(setId);
+        reissue(setId, capture(), null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.uploads").isArray())
+                .andExpect(jsonPath("$.uploads.length()").value(0));
+    }
+
+    @Test
+    @DisplayName("세트에 없는 (face, light, camera)나 형식 오류는 400 VALIDATION_FAILED(photos[i])")
+    void reissueUnknownPhoto() throws Exception {
+        String setId = created(booth(), boothBody(List.of())).get("captureSetId").asText();
+        reissue(setId, booth(), "{\"photos\":[" + ref("TOP", "L1", "CAM1") + "," + ref("TOP", "L2", "CAM1") + "]}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("photos[1]"));
+        reissue(setId, booth(), "{\"photos\":[]}").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        reissue(setId, booth(), "{\"photos\":[{\"face\":\"TOP\",\"light\":\"L1\"}]}")
+                .andExpect(status().isBadRequest());
+        reissue(setId, booth(), "{\"photos\":[" + ref("TOP", "L1", "CAM1").replace("}", ",\"sha256\":\"x\"}")
+                + "]}").andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("완료된 세트의 URL을 다시 받으면 409 CAPTURE_SET_CLOSED")
+    void reissueClosed() throws Exception {
+        String setId = created(booth(), boothBody(List.of())).get("captureSetId").asText();
+        uploadAll(setId);
+        complete(setId, booth(), "key-00000001", "{}").andExpect(status().isAccepted());
+        reissue(setId, booth(), null)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CAPTURE_SET_CLOSED"));
+    }
+
+    @Test
+    @DisplayName("다른 부스·다른 시점은 403 OUT_OF_SCOPE, 일반 고객·관리자는 403 FORBIDDEN, 없는 세트는 404")
+    void reissueScope() throws Exception {
+        String boothSet = created(booth(), boothBody(List.of())).get("captureSetId").asText();
+        reissue(boothSet, booth("booth-02"), null)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("OUT_OF_SCOPE"));
+        reissue(boothSet, capture(), null)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("OUT_OF_SCOPE"));
+
+        String phoneSet = created(capture(), phoneBody()).get("captureSetId").asText();
+        reissue(phoneSet, capture(OTHER_CHECKPOINT, RENTAL), null)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("OUT_OF_SCOPE"));
+        reissue(phoneSet, booth(), null)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("OUT_OF_SCOPE"));
+        reissue(phoneSet, customer(), null)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        reissue(phoneSet, admin(), null)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("FORBIDDEN"));
+        reissue("AAAAAAAAAAAAAAAAAAAAA", booth(), null)
+                .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("NOT_FOUND"));
+    }
+
     // ── 도우미 ──
+
+    private ResultActions reissue(String setId, RequestPostProcessor token, String body) throws Exception {
+        MockHttpServletRequestBuilder request = post("/api/v1/captures/sets/" + setId + "/uploads").with(token);
+        return body == null ? mvc.perform(request) : perform(request, body);
+    }
+
+    private JsonNode tree(String body) {
+        try {
+            return json.readTree(body);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static String ref(String face, String light, String camera) {
+        return "{\"face\":\"" + face + "\",\"light\":\"" + light + "\",\"camera\":\"" + camera + "\"}";
+    }
 
     private JsonNode created(RequestPostProcessor token, String body)
             throws Exception {

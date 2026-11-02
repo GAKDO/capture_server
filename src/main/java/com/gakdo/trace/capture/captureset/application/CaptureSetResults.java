@@ -26,6 +26,10 @@ public final class CaptureSetResults {
     public record CaptureSetCreateResponse(String captureSetId, List<UploadTarget> uploads) {
     }
 
+    /** 업로드 URL 다시 받기 응답(contracts UploadReissueResponse). 모두 올라갔으면 빈 배열. */
+    public record UploadReissueResponse(List<UploadTarget> uploads) {
+    }
+
     public record CaptureSetPhotoView(Face face, Light light, Camera camera, String sha256, boolean uploaded,
             boolean qualityOk) {
     }

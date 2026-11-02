@@ -34,7 +34,7 @@ class CaptureDomainTest {
     private static final String OTHER_SHA = "b".repeat(64);
 
     @Test
-    @DisplayName("코드 enum은 contracts codes.yaml 0.5.0 capture·error_code 값과 이름·순서가 같다")
+    @DisplayName("코드 enum은 contracts codes.yaml 0.6.0 capture·error_code 값과 이름·순서가 같다")
     void codesMatchContract() {
         assertThat(names(CaptureSource.values())).containsExactly("BOOTH", "PHONE");
         assertThat(names(Face.values())).containsExactly("TOP", "BOT", "SF", "SB", "SL", "SR", "KB", "SCR0", "SCR1");
@@ -174,7 +174,7 @@ class CaptureDomainTest {
         return Arrays.stream(values).map(Enum::name).toList();
     }
 
-    /** contracts codes.yaml 0.5.0 error_code 중 이 서버가 쓰는 것을 포함한 전체 목록의 일부(공통 + capture). */
+    /** contracts codes.yaml 0.6.0 error_code 중 이 서버가 쓰는 것을 포함한 전체 목록의 일부(공통 + capture). */
     private static final Set<String> CONTRACT_ERROR_CODES = Set.of("VALIDATION_FAILED", "UNAUTHENTICATED", "FORBIDDEN",
             "OUT_OF_SCOPE", "NOT_FOUND", "RATE_LIMITED", "IDEMPOTENCY_KEY_CONFLICT", "INTERNAL_ERROR",
             "CAPTURE_FACES_MISSING", "CAPTURE_HASH_MISMATCH", "CAPTURE_SET_CLOSED");

@@ -40,6 +40,14 @@ public final class CaptureSetDtos {
             @NotNull @Size(min = 1, max = 54) List<@Valid @NotNull PhotoSpecRequest> photos) {
     }
 
+    /** 업로드 URL 다시 받기에서 사진 한 장을 가리킨다(contracts UploadReissueRequest.photos[]). */
+    public record PhotoRefRequest(@NotNull Face face, @NotNull Light light, @NotNull Camera camera) {
+    }
+
+    /** photos를 빼면 아직 안 올라간 사진 전부. */
+    public record UploadReissueRequest(@Size(min = 1, max = 54) List<@Valid @NotNull PhotoRefRequest> photos) {
+    }
+
     public record CaptureSetCompleteRequest(
             Map<Face, @NotBlank @Size(max = 200) String> skippedFaces) {
 

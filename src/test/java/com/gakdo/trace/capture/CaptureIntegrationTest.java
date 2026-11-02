@@ -115,7 +115,7 @@ class CaptureIntegrationTest {
     private final HttpClient http = HttpClient.newHttpClient();
 
     @Test
-    @DisplayName("사진은 사전 서명 URL로 직접 올라가고, 완료하면 이벤트가 나가며, 내려받은 파일 해시와 저장된 해시가 같다")
+    @DisplayName("사진은 사전 서명 URL로 직접 올라가고, 끊기면 남은 사진의 URL만 다시 받으며, 완료하면 이벤트가 나가며, 내려받은 파일 해시와 저장된 해시가 같다")
     void endToEnd() throws Exception {
         if (!s3.listBuckets().buckets().stream().anyMatch(b -> b.name().equals(BUCKET))) {
             s3.createBucket(b -> b.bucket(BUCKET));
@@ -148,7 +148,16 @@ class CaptureIntegrationTest {
             assertThat(put(first, "다른 사진".getBytes())).isBetween(400, 499);
         }
 
-        for (JsonNode upload : createdJson.get("uploads")) {
+        // 처음 3장만 올리고 끊긴 상황: 남은 사진의 URL만 다시 받아 나머지를 올린다(11/2 결정)
+        JsonNode uploads = createdJson.get("uploads");
+        for (int i = 0; i < 3; i++) {
+            assertThat(put(uploads.get(i), files.get(uploads.get(i).get("face").asText()))).isEqualTo(200);
+        }
+        JsonNode reissued = json.readTree(mvc.perform(post("/api/v1/captures/sets/" + setId + "/uploads")
+                .with(capture())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .get("uploads");
+        assertThat(reissued).hasSize(PHONE_FACES.size() - 3);
+        for (JsonNode upload : reissued) {
             assertThat(put(upload, files.get(upload.get("face").asText()))).isEqualTo(200);
         }
 

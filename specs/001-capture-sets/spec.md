@@ -52,7 +52,7 @@ gateway는 역할까지만 막으므로 시점·세트·부스 범위는 서버�
 
 ### 경계 상황
 - MinIO에 닿지 않으면 complete는 500 INTERNAL_ERROR이고 세트는 UPLOADING 그대로라 다시 시도할 수 있다.
-- 업로드 URL이 만료되면 새 세트를 만든다(MVP에 URL 재발급 경로 없음, 계약 그대로).
+- 업로드 URL이 만료되면 세트를 새로 만들지 않고 `POST /captures/sets/{setId}/uploads`로 남은 사진의 URL만 다시 받는다(11/2 결정, contracts PR #8, FR-008).
 - 한 시점에 세트를 여러 번 만들 수 있다(다시 찍기). rental-server는 uploaded 이벤트를 멱등으로 받는다.
 - GET은 UPLOADING 세트에 한해 MinIO 존재 여부로 uploaded를 보여 준다(해시 확인은 complete에서만).
 
@@ -65,6 +65,7 @@ gateway는 역할까지만 막으므로 시점·세트·부스 범위는 서버�
 - **FR-005**: 완료 시 상태 UPLOADED, skipped_faces 저장, `trace.capture.uploaded`(schemaVersion 1.0)를 DB 트랜잭션과 함께 발행한다.
 - **FR-006**: complete는 Idempotency-Key(8~128자)로 한 번만 처리한다.
 - **FR-007**: 범위는 이야기 3대로 서버가 확인한다. 오류는 모두 Problem Details(code = codes.yaml error_code).
+- **FR-008** (11/2 후속): `POST /captures/sets/{setId}/uploads`는 저장소에 아직 없는 사진에만 FR-002와 같은 10분 PUT URL을 새로 준다. 본문이 없거나 `photos`가 없으면 세트의 사진 전부, `photos`를 주면 그 사진만(응답은 세트 순서). 세트에 없는 (face, light, camera)는 400 VALIDATION_FAILED(`photos[i]`), 완료된 세트는 409 CAPTURE_SET_CLOSED, 권한·범위는 세트 생성과 같다(BOOTH 자기 부스, 촬영 JWT 같은 시점·렌탈). 응답 `uploads`는 세트 생성과 같은 형식이고 세트는 바뀌지 않는다.
 
 ## 범위 밖
 - 부스 탐지 결과 저장(`/detections`), 검사 결과·등급(`/inspection`), 보기 URL(`/media`): CA2·ML2.
