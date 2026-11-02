@@ -3,6 +3,7 @@ package com.gakdo.trace.capture.captureset.infra;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.net.URI;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
@@ -40,11 +41,13 @@ public class S3PhotoStorage implements PhotoStorage {
     private final S3Client s3;
     private final S3Presigner presigner;
     private final String bucket;
+    private final String publicBase;
 
     public S3PhotoStorage(S3Client s3, S3Presigner presigner, StorageProperties props) {
         this.s3 = s3;
         this.presigner = presigner;
         this.bucket = props.captureBucket();
+        this.publicBase = normalizeBase(props.publicBase());
     }
 
     @Override
@@ -62,7 +65,7 @@ public class S3PhotoStorage implements PhotoStorage {
                 headers.put(canonical(name), String.join(",", values));
             }
         });
-        return new UploadUrl(signed.url().toString(), headers,
+        return new UploadUrl(publicUrl(signed.url().toString(), publicBase), headers,
                 Times.utc(signed.expiration().atOffset(ZoneOffset.UTC)));
     }
 
@@ -113,6 +116,37 @@ public class S3PhotoStorage implements PhotoStorage {
         while ((read = in.read(buffer)) != -1) {
             digest.update(buffer, 0, read);
         }
+    }
+
+    /**
+     * 사전 서명 URL의 scheme://host[:port]만 공개 주소로 바꾼다. 경로(/버킷/키)와 서명 쿼리는 글자 그대로 둔다.
+     * 서명에는 MinIO 원래 Host가 들어 있으므로, 공개 주소의 프록시(web nginx)가 Host를 MinIO 주소로 넘겨야 검증이 맞는다.
+     * 공개 주소에 경로가 있으면(예: https://example.com/s3) 그 뒤에 붙인다.
+     */
+    static String publicUrl(String signedUrl, String publicBase) {
+        if (publicBase == null) {
+            return signedUrl;
+        }
+        URI signed = URI.create(signedUrl);
+        String query = signed.getRawQuery() == null ? "" : "?" + signed.getRawQuery();
+        return publicBase + signed.getRawPath() + query;
+    }
+
+    /** 빈 값은 null(바꾸지 않음), 끝의 /는 뗀다. http(s)://호스트 형태가 아니면 시작할 때 멈춘다. */
+    static String normalizeBase(String base) {
+        if (base == null || base.isBlank()) {
+            return null;
+        }
+        String trimmed = base.strip();
+        while (trimmed.endsWith("/")) {
+            trimmed = trimmed.substring(0, trimmed.length() - 1);
+        }
+        URI uri = URI.create(trimmed);
+        if (!("http".equals(uri.getScheme()) || "https".equals(uri.getScheme())) || uri.getHost() == null
+                || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+            throw new IllegalStateException("MINIO_PUBLIC_BASE는 http(s)://호스트[:포트][/경로] 형태여야 합니다: " + base);
+        }
+        return trimmed;
     }
 
     static String base64(String sha256Hex) {

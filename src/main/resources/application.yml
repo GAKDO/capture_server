@@ -57,6 +57,9 @@ app:
     region: ${MINIO_REGION:us-east-1}
     capture-bucket: ${MINIO_CAPTURE_BUCKET:trace-captures}
     upload-ttl: 10m
+    # 사전 서명 URL의 앞부분(scheme://host[:port])을 이 주소로 바꿔 준다. HTTPS 웹에서 http:// MinIO 주소는 혼합 콘텐츠로 막히므로
+    # web nginx가 /trace-captures/를 MinIO로 넘기고(Host는 MinIO 주소 그대로) 여기에는 web 공개 주소를 둔다. 비우면 바꾸지 않는다
+    public-base: ${MINIO_PUBLIC_BASE:}
 
 management:
   endpoints:
