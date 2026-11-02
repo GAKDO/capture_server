@@ -4,7 +4,7 @@ import java.util.EnumSet;
 import java.util.Set;
 
 /**
- * 출처별 촬영 규칙. 필수 면은 contracts codes.yaml 0.5.0 {@code capture.face_required}를 옮긴 값이고 FaceRulesTest가 원본과 대조한다.
+ * 출처별 촬영 규칙. 필수 면은 contracts codes.yaml 0.6.0 {@code capture.face_required}를 옮긴 값이고 FaceRulesTest가 원본과 대조한다.
  * 카메라·조명 묶음은 codes.yaml 주석(부스 L1~L4·CAM1·CAM2, 폰 ROOM·PHONE, SCR1은 OFF)을 따른다.
  */
 public final class FaceRules {

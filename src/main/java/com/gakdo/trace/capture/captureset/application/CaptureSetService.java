@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,18 +24,22 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gakdo.trace.capture.captureset.application.CaptureSetResults.CaptureSetCreateResponse;
 import com.gakdo.trace.capture.captureset.application.CaptureSetResults.CaptureSetView;
+import com.gakdo.trace.capture.captureset.application.CaptureSetResults.UploadReissueResponse;
 import com.gakdo.trace.capture.captureset.application.CaptureSetResults.UploadTarget;
 import com.gakdo.trace.capture.captureset.application.CaptureUploadedEvent.EventPhoto;
+import com.gakdo.trace.capture.captureset.domain.Camera;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet.PhotoSpec;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
 import com.gakdo.trace.capture.captureset.domain.CompletionCheck;
 import com.gakdo.trace.capture.captureset.domain.CompletionCheck.PhotoState;
 import com.gakdo.trace.capture.captureset.domain.Face;
+import com.gakdo.trace.capture.captureset.domain.Light;
 import com.gakdo.trace.capture.captureset.domain.Photo;
 import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.common.domain.DomainException;
+import com.gakdo.trace.capture.common.domain.DomainException.FieldError;
 import com.gakdo.trace.capture.common.domain.ErrorCode;
 import com.gakdo.trace.capture.common.infra.Caller;
 import com.gakdo.trace.capture.common.infra.PublicIds;
@@ -67,6 +72,10 @@ public class CaptureSetService {
     public record NewPhoto(PhotoSpec spec, String contentType) {
     }
 
+    /** 세트 안의 사진 한 장을 가리키는 (face, light, camera). */
+    public record PhotoRef(Face face, Light light, Camera camera) {
+    }
+
     @Transactional
     public CaptureSetCreateResponse create(Caller caller, String rentalId, String checkpointId, CaptureSource source,
             List<NewPhoto> photos) {
@@ -88,15 +97,69 @@ public class CaptureSetService {
 
         List<UploadTarget> uploads = new ArrayList<>();
         for (int i = 0; i < photos.size(); i++) {
-            Photo photo = set.getPhotos().get(i);
-            PhotoStorage.UploadUrl url = storage.presignPut(photo.getObjectKey(), photos.get(i).contentType(),
-                    photo.getSha256(), uploadTtl);
-            uploads.add(new UploadTarget(photo.getFace(), photo.getLight(), photo.getCamera(), "PUT", url.url(),
-                    url.headers(), url.expiresAt()));
+            uploads.add(uploadTarget(set.getPhotos().get(i), photos.get(i).contentType()));
         }
         log.info("촬영 세트 생성 set={} checkpoint={} source={} photos={}", set.getPublicId(), checkpointId, source,
                 photos.size());
         return new CaptureSetCreateResponse(set.getPublicId(), uploads);
+    }
+
+    /**
+     * 업로드 URL 다시 받기(contracts reissueUploadUrls, 11/2 결정). 권한·범위는 세트 생성과 같고, 저장소에 이미 있는 사진은 빼고
+     * 새 사전 서명 PUT URL을 준다. requested가 null이면 세트의 사진 전부가 대상이다. 세트는 바꾸지 않는다.
+     */
+    @Transactional(readOnly = true)
+    public UploadReissueResponse reissueUploads(Caller caller, String setId, List<PhotoRef> requested) {
+        caller.requireCapturer();
+        CaptureSet set = sets.findByPublicId(setId).orElseThrow(() -> DomainException.notFound("촬영 세트"));
+        checkWriteScope(caller, set);
+        if (set.isCompleted()) {
+            throw new DomainException(ErrorCode.CAPTURE_SET_CLOSED, null);
+        }
+
+        List<Photo> targets = requested == null ? set.getPhotos() : pick(set, requested);
+        List<UploadTarget> uploads = new ArrayList<>();
+        for (Photo photo : targets) {
+            if (!existsQuietly(photo)) {
+                uploads.add(uploadTarget(photo, contentTypeOf(photo)));
+            }
+        }
+        log.info("업로드 URL 재발급 set={} requested={} issued={}", set.getPublicId(),
+                requested == null ? "all" : requested.size(), uploads.size());
+        return new UploadReissueResponse(uploads);
+    }
+
+    /** 요청한 사진을 세트 순서대로 고른다. 세트에 없는 (face, light, camera)는 photos[i]로 400. */
+    private static List<Photo> pick(CaptureSet set, List<PhotoRef> requested) {
+        Set<PhotoRef> wanted = new LinkedHashSet<>(requested);
+        Set<PhotoRef> inSet = new HashSet<>();
+        for (Photo p : set.getPhotos()) {
+            inSet.add(new PhotoRef(p.getFace(), p.getLight(), p.getCamera()));
+        }
+        List<FieldError> errors = new ArrayList<>();
+        for (int i = 0; i < requested.size(); i++) {
+            if (!inSet.contains(requested.get(i))) {
+                errors.add(new FieldError("photos[" + i + "]", "세트에 없는 사진입니다(face, light, camera)."));
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new DomainException(ErrorCode.VALIDATION_FAILED, "세트에 없는 사진이 있습니다.", errors);
+        }
+        return set.getPhotos().stream()
+                .filter(p -> wanted.contains(new PhotoRef(p.getFace(), p.getLight(), p.getCamera())))
+                .toList();
+    }
+
+    private UploadTarget uploadTarget(Photo photo, String contentType) {
+        PhotoStorage.UploadUrl url = storage.presignPut(photo.getObjectKey(), contentType, photo.getSha256(),
+                uploadTtl);
+        return new UploadTarget(photo.getFace(), photo.getLight(), photo.getCamera(), "PUT", url.url(), url.headers(),
+                url.expiresAt());
+    }
+
+    /** 세트 생성 때 알린 형식. 객체 키 확장자(jpg·png)에 남아 있다. */
+    private static String contentTypeOf(Photo photo) {
+        return photo.getObjectKey().endsWith(".png") ? "image/png" : "image/jpeg";
     }
 
     /**

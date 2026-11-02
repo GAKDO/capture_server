@@ -18,10 +18,13 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.gakdo.trace.capture.captureset.api.CaptureSetDtos.CaptureSetCompleteRequest;
 import com.gakdo.trace.capture.captureset.api.CaptureSetDtos.CaptureSetCreateRequest;
+import com.gakdo.trace.capture.captureset.api.CaptureSetDtos.UploadReissueRequest;
 import com.gakdo.trace.capture.captureset.application.CaptureSetResults.CaptureSetCreateResponse;
 import com.gakdo.trace.capture.captureset.application.CaptureSetResults.CaptureSetView;
+import com.gakdo.trace.capture.captureset.application.CaptureSetResults.UploadReissueResponse;
 import com.gakdo.trace.capture.captureset.application.CaptureSetService;
 import com.gakdo.trace.capture.captureset.application.CaptureSetService.NewPhoto;
+import com.gakdo.trace.capture.captureset.application.CaptureSetService.PhotoRef;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet.PhotoSpec;
 import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.common.infra.Caller;
@@ -54,6 +57,16 @@ public class CaptureSetController {
         CaptureSetCreateResponse body = service.create(Caller.from(jwt), request.rentalId(), request.checkpointId(),
                 request.source(), photos);
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+
+    /** 업로드 URL 다시 받기. 본문이 없거나 photos가 없으면 아직 안 올라간 사진 전부. */
+    @PostMapping("/{setId}/uploads")
+    public UploadReissueResponse reissueUploads(@AuthenticationPrincipal Jwt jwt,
+            @PathVariable @Pattern(regexp = PublicIds.PATTERN) String setId,
+            @Valid @RequestBody(required = false) UploadReissueRequest request) {
+        List<PhotoRef> photos = request == null || request.photos() == null ? null
+                : request.photos().stream().map(p -> new PhotoRef(p.face(), p.light(), p.camera())).toList();
+        return service.reissueUploads(Caller.from(jwt), setId, photos);
     }
 
     @PostMapping("/{setId}/complete")

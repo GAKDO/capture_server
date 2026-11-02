@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.gakdo.trace.capture.captureset.application.PhotoStorage;
 
@@ -16,6 +17,7 @@ import com.gakdo.trace.capture.captureset.application.PhotoStorage;
 public class FakePhotoStorage implements PhotoStorage {
 
     private final Map<String, String> objects = new ConcurrentHashMap<>();
+    private final AtomicLong issued = new AtomicLong();
 
     public void put(String key, String sha256) {
         objects.put(key, sha256);
@@ -31,7 +33,8 @@ public class FakePhotoStorage implements PhotoStorage {
         headers.put("Content-Type", contentType);
         headers.put("x-amz-checksum-sha256",
                 Base64.getEncoder().encodeToString(HexFormat.of().parseHex(sha256Hex)));
-        return new UploadUrl("https://minio.test/trace-captures/" + objectKey + "?X-Amz-Signature=fake", headers,
+        return new UploadUrl("https://minio.test/trace-captures/" + objectKey + "?X-Amz-Signature=fake"
+                + issued.incrementAndGet(), headers,
                 OffsetDateTime.now(ZoneOffset.UTC).plus(ttl));
     }
 

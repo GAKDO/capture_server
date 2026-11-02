@@ -44,7 +44,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/ping").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/health", "/actuator/info").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/captures/sets", "/api/v1/captures/sets/*/complete")
+                        .requestMatchers(HttpMethod.POST, "/api/v1/captures/sets", "/api/v1/captures/sets/*/uploads",
+                                "/api/v1/captures/sets/*/complete")
                         .hasAnyRole(BOOTH, CUSTOMER)
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/sets/*").hasAnyRole(ADMIN, CUSTOMER)
                         // 시점·세트·부스 범위는 컨트롤러가 Caller로 다시 본다(gateway는 역할까지만, decisions.md 11/2)
