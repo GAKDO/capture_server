@@ -3,7 +3,11 @@ package com.gakdo.trace.capture.captureset.infra;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Duration;
+
 import org.junit.jupiter.api.Test;
+
+import com.gakdo.trace.capture.captureset.application.PhotoStorage.UploadUrl;
 
 /** MINIO_PUBLIC_BASE: 폰에 돌려주는 사전 서명 URL의 앞부분만 공개 주소로 바뀌고 서명은 그대로 남는다. */
 class S3PhotoStoragePublicUrlTest {
@@ -42,5 +46,19 @@ class S3PhotoStoragePublicUrlTest {
         // 사용자 정보는 폰에 돌려주는 URL에 그대로 실리므로 받지 않는다
         assertThatThrownBy(() -> S3PhotoStorage.normalizeBase("https://user:pw@gakdo.site"))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void 사전_서명_URL은_공개_주소로_시작하고_버킷_경로와_서명_쿼리를_담는다() {
+        StorageProperties props = new StorageProperties("http://minio:9000", "test-access", "test-secret", "us-east-1",
+                "trace-captures", Duration.ofMinutes(10), "https://gakdo.site/");
+        S3Config config = new S3Config();
+        try (var s3 = config.s3Client(props); var presigner = config.s3Presigner(props)) {
+            UploadUrl upload = new S3PhotoStorage(s3, presigner, props)
+                    .presignPut("sets/abc/TOP_L1_CAM1.jpg", "image/jpeg", "ab".repeat(32), Duration.ofMinutes(10));
+
+            assertThat(upload.url()).startsWith("https://gakdo.site/trace-captures/sets/abc/TOP_L1_CAM1.jpg?")
+                    .contains("X-Amz-Signature=").doesNotContain("minio:9000");
+        }
     }
 }
