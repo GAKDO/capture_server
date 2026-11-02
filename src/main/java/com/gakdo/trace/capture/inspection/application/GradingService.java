@@ -54,6 +54,8 @@ public class GradingService {
 
     private static final Logger log = LoggerFactory.getLogger(GradingService.class);
     private static final MatchRule RULE = MatchRule.V1;
+    /** 계약 trace.checkpoint.graded pins maxItems */
+    static final int MAX_PINS = 500;
 
     private final DefectRepository defects;
     private final DefectMatchRepository matches;
@@ -201,7 +203,22 @@ public class GradingService {
             int n = d.getPolygon().size();
             pins.add(new Pin(id, g.face(), Math.max(0, x / n), Math.max(0, y / n), fresh.contains(id)));
         }
-        return pins;
+        return limit(pins, MAX_PINS);
+    }
+
+    /**
+     * 핀은 화면용이라 상한을 넘으면 잘라 계약(maxItems)을 지킨다. 새 흠집 핀을 먼저 남기고, 같은 종류 안에서는 원래 순서를 지킨다.
+     * 등급·newDefectIds는 그대로라 판정에는 영향이 없다.
+     */
+    static List<Pin> limit(List<Pin> pins, int max) {
+        if (pins.size() <= max) {
+            return pins;
+        }
+        List<Pin> kept = new ArrayList<>(max);
+        pins.stream().filter(Pin::isNew).limit(max).forEach(kept::add);
+        pins.stream().filter(p -> !p.isNew()).limit(max - kept.size()).forEach(kept::add);
+        log.warn("핀이 {}개라 {}개만 싣습니다(새 흠집 우선)", pins.size(), max);
+        return kept;
     }
 
     /** 해시 체인 재료: 올라갔고 건너뛰지 않은 사진. */
