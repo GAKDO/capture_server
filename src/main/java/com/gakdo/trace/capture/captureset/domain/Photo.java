@@ -97,6 +97,14 @@ public class Photo {
         this.updatedAt = now;
     }
 
+    public Long getId() {
+        return id;
+    }
+
+    public CaptureSet getCaptureSet() {
+        return captureSet;
+    }
+
     public String getPublicId() {
         return publicId;
     }

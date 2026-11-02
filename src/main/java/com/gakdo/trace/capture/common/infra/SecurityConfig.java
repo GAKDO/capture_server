@@ -48,6 +48,9 @@ public class SecurityConfig {
                                 "/api/v1/captures/sets/*/complete")
                         .hasAnyRole(BOOTH, CUSTOMER)
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/sets/*").hasAnyRole(ADMIN, CUSTOMER)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/captures/sets/*/detections").hasRole(BOOTH)
+                        .requestMatchers(HttpMethod.GET, "/api/v1/captures/checkpoints/*/inspection")
+                        .hasAnyRole(ADMIN, CUSTOMER)
                         // 시점·세트·부스 범위는 컨트롤러가 Caller로 다시 본다(gateway는 역할까지만, decisions.md 11/2)
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(o -> o

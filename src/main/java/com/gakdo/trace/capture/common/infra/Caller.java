@@ -1,5 +1,7 @@
 package com.gakdo.trace.capture.common.infra;
 
+import java.util.List;
+
 import org.springframework.security.oauth2.jwt.Jwt;
 
 import com.gakdo.trace.capture.common.domain.DomainException;
@@ -10,13 +12,24 @@ import com.gakdo.trace.capture.common.domain.ErrorCode;
  * <ul>
  * <li>BOOTH: scope = boothId(= sub)</li>
  * <li>촬영 JWT: role CUSTOMER + scope = checkpointId + rentalId</li>
+ * <li>일반 고객: rentals = 본인 렌탈 목록(검사 결과 조회, CA2)</li>
  * <li>ADMIN: 제한 없음(조회만)</li>
  * </ul>
  */
-public record Caller(String role, String scope, String rentalId) {
+public record Caller(String role, String scope, String rentalId, List<String> rentals) {
+
+    public Caller {
+        rentals = rentals == null ? List.of() : List.copyOf(rentals);
+    }
 
     public static Caller from(Jwt jwt) {
-        return new Caller(jwt.getClaimAsString("role"), jwt.getClaimAsString("scope"), jwt.getClaimAsString("rentalId"));
+        return new Caller(jwt.getClaimAsString("role"), jwt.getClaimAsString("scope"), jwt.getClaimAsString("rentalId"),
+                jwt.getClaimAsStringList("rentals"));
+    }
+
+    /** 일반 고객 토큰(촬영 JWT 아님)이 그 렌탈을 가졌나(rentals 클레임, OWN_RENTAL 범위). */
+    public boolean ownsRental(String rental) {
+        return "CUSTOMER".equals(role) && !isCaptureToken() && rentals.contains(rental);
     }
 
     public boolean isAdmin() {

@@ -1,0 +1,197 @@
+package com.gakdo.trace.capture.inspection.application;
+
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.gakdo.trace.capture.captureset.domain.CaptureSet;
+import com.gakdo.trace.capture.captureset.domain.CaptureSource;
+import com.gakdo.trace.capture.captureset.domain.Face;
+import com.gakdo.trace.capture.captureset.domain.Photo;
+import com.gakdo.trace.capture.captureset.domain.SetStatus;
+import com.gakdo.trace.capture.common.infra.PublicIds;
+import com.gakdo.trace.capture.common.infra.Times;
+import com.gakdo.trace.capture.comparison.domain.ComparisonResult;
+import com.gakdo.trace.capture.comparison.domain.DefectMatch;
+import com.gakdo.trace.capture.comparison.domain.DefectObservation;
+import com.gakdo.trace.capture.comparison.domain.MatchRule;
+import com.gakdo.trace.capture.comparison.domain.MatchStatus;
+import com.gakdo.trace.capture.comparison.domain.ViewComparator;
+import com.gakdo.trace.capture.comparison.domain.ViewSnapshot;
+import com.gakdo.trace.capture.inspection.application.CheckpointGradedEvent.PhotoHash;
+import com.gakdo.trace.capture.inspection.domain.CheckpointKind;
+import com.gakdo.trace.capture.inspection.domain.Defect;
+import com.gakdo.trace.capture.inspection.domain.DefectGroups;
+import com.gakdo.trace.capture.inspection.domain.DefectMatchRecord;
+import com.gakdo.trace.capture.inspection.domain.FaceAlignment;
+import com.gakdo.trace.capture.inspection.domain.GradeResult;
+import com.gakdo.trace.capture.inspection.domain.GradeRules;
+import com.gakdo.trace.capture.inspection.domain.Judgeability;
+import com.gakdo.trace.capture.inspection.domain.Judgeability.PhotoState;
+import com.gakdo.trace.capture.inspection.infra.DefectMatchRepository;
+import com.gakdo.trace.capture.inspection.infra.DefectRepository;
+import com.gakdo.trace.capture.inspection.infra.FaceAlignmentRepository;
+import com.gakdo.trace.capture.inspection.infra.GradeResultRepository;
+
+/**
+ * 판정 불가 면 → 바로 앞 시점과 비교(C의 view-match-v1) → 같은 흠집 묶기 → 등급(grade-rules-v1) → 저장·이벤트.
+ * 부르는 쪽이 세트 행을 잠근 트랜잭션 안에서 부른다(탐지 POST와 정합 이벤트가 동시에 와도 한 번만 매긴다).
+ */
+@Service
+public class GradingService {
+
+    private static final Logger log = LoggerFactory.getLogger(GradingService.class);
+    private static final MatchRule RULE = MatchRule.V1;
+
+    private final DefectRepository defects;
+    private final DefectMatchRepository matches;
+    private final FaceAlignmentRepository alignments;
+    private final GradeResultRepository grades;
+    private final GradeEventPublisher events;
+    private final ViewComparator comparator = new ViewComparator(RULE);
+
+    public GradingService(DefectRepository defects, DefectMatchRepository matches, FaceAlignmentRepository alignments,
+            GradeResultRepository grades, GradeEventPublisher events) {
+        this.defects = defects;
+        this.matches = matches;
+        this.alignments = alignments;
+        this.grades = grades;
+        this.events = events;
+    }
+
+    /**
+     * 준비됐으면 등급을 매긴다. 정합 결과(INSPECTED)가 있어야 하고, 부스 세트는 부스 탐지도 와 있어야 한다.
+     *
+     * @return 등급을 매겼으면 true
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean gradeIfReady(CaptureSet set) {
+        if (set.getStatus() != SetStatus.INSPECTED) {
+            return false;
+        }
+        if (set.getSource() == CaptureSource.BOOTH && set.getDetectionsReceivedAt() == null) {
+            log.info("부스 탐지를 기다립니다 set={}", set.getPublicId());
+            return false;
+        }
+
+        Set<Long> aligned = new HashSet<>();
+        alignments.findBySet(set).forEach(a -> aligned.add(a.getPhoto().getId()));
+        List<PhotoState> states = states(set, aligned);
+        Map<Face, String> unjudgeable = Judgeability.unjudgeable(states, set.getSkippedFaces());
+        Set<Face> judgeable = Judgeability.judgeable(states, unjudgeable);
+        if (judgeable.isEmpty()) {
+            set.markUnjudgeable();
+            log.warn("판정할 수 있는 면이 없어 등급을 매기지 않습니다 set={} 사유={}", set.getPublicId(), unjudgeable);
+            return false;
+        }
+
+        List<Defect> current = usable(defects.findBySet(set), judgeable);
+        Optional<GradeResult> previous = grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(
+                set.getRentalId(), set.getCheckpointId());
+        Map<String, Defect> prevById = new HashMap<>();
+        ViewSnapshot prevSnapshot = previous.map(p -> snapshotOf(p, prevById)).orElse(null);
+
+        ComparisonResult comparison = comparator.compare(prevSnapshot, snapshot(current, judgeable));
+        Map<String, Defect> currentById = new HashMap<>();
+        current.forEach(d -> currentById.put(d.getPublicId(), d));
+        matches.deleteBySet(set);
+        Map<String, MatchStatus> status = new HashMap<>();
+        List<String> newIds = new ArrayList<>();
+        for (DefectMatch m : comparison.matches()) {
+            Defect prev = m.prevDefectId() == null ? null : prevById.get(m.prevDefectId());
+            matches.save(new DefectMatchRecord(currentById.get(m.defectId()), prev, m.status(), m.distanceMm(),
+                    comparison.ruleVersion()));
+            status.put(m.defectId(), m.status());
+            if (m.status() == MatchStatus.NEW) {
+                newIds.add(m.defectId());
+            }
+        }
+
+        List<DefectGroups.Item> items = current.stream()
+                .map(d -> new DefectGroups.Item(observe(d), d.getLengthMm(), status.get(d.getPublicId())))
+                .toList();
+        GradeRules.Outcome outcome = GradeRules.evaluate(DefectGroups.group(items, RULE), unjudgeable,
+                previous.isEmpty());
+
+        GradeResult result = grades.findByCheckpointId(set.getCheckpointId())
+                .orElseGet(() -> new GradeResult(set.getCheckpointId()));
+        List<Face> unjudgeableFaces = List.copyOf(unjudgeable.keySet());
+        result.record(set, outcome.grade(), outcome.ruleVersion(), outcome.reasons(), unjudgeableFaces);
+        grades.save(result);
+        set.markGraded();
+
+        CheckpointKind kind = CheckpointKind.infer(set.getSource(), previous.isPresent());
+        events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
+                Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
+                outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set)));
+        log.info("등급 set={} checkpoint={} type={} grade={} 신규={} 판정불가={} 비교={}", set.getPublicId(),
+                set.getCheckpointId(), kind, outcome.grade(), newIds.size(), unjudgeableFaces,
+                previous.map(GradeResult::getCheckpointId).orElse("없음(기준선)"));
+        return true;
+    }
+
+    private static List<PhotoState> states(CaptureSet set, Set<Long> aligned) {
+        return set.getPhotos().stream()
+                .map(p -> new PhotoState(p.getFace(), p.getCamera(), p.isUploaded(), p.isQualityOk(),
+                        aligned.contains(p.getId())))
+                .toList();
+    }
+
+    /** 표준 좌표가 있고 판정 가능 면에 있는 흠집만 비교·등급에 쓴다. */
+    private static List<Defect> usable(List<Defect> all, Set<Face> judgeable) {
+        return all.stream()
+                .filter(d -> d.getPolygon() != null && judgeable.contains(d.getPhoto().getFace()))
+                .toList();
+    }
+
+    /** 앞 시점: 그때 등급을 매긴 세트의 흠집과, 그 세트에서 판정할 수 있던 면. */
+    private ViewSnapshot snapshotOf(GradeResult previous, Map<String, Defect> prevById) {
+        CaptureSet prevSet = previous.getCaptureSet();
+        Set<Face> faces = EnumSet.noneOf(Face.class);
+        prevSet.getPhotos().stream().filter(Photo::isUploaded).forEach(p -> faces.add(p.getFace()));
+        faces.removeAll(previous.getUnjudgeableFaces());
+        faces.removeAll(prevSet.getSkippedFaces().keySet());
+        List<Defect> prevDefects = usable(defects.findBySet(prevSet), faces);
+        prevDefects.forEach(d -> prevById.put(d.getPublicId(), d));
+        return snapshot(prevDefects, faces);
+    }
+
+    private static ViewSnapshot snapshot(List<Defect> list, Set<Face> faces) {
+        return new ViewSnapshot(list.stream().map(GradingService::observe).toList(), faces);
+    }
+
+    private static DefectObservation observe(Defect d) {
+        return DefectObservation.fromStandardPx(d.getPublicId(), d.getPhoto().getFace(), d.getDefectClass(),
+                d.getPolygon());
+    }
+
+    /** 해시 체인 재료: 올라갔고 건너뛰지 않은 사진. */
+    private static List<PhotoHash> photoHashes(CaptureSet set) {
+        return set.getPhotos().stream()
+                .filter(Photo::isUploaded)
+                .filter(p -> !set.getSkippedFaces().containsKey(p.getFace()))
+                .map(p -> new PhotoHash(p.getPublicId(), p.getSha256()))
+                .toList();
+    }
+
+    /** 정합 결과로 표준 좌표를 채운다(부스 탐지). 정합하지 못한 사진의 흠집은 표준 좌표 없이 남는다. */
+    static void place(List<Defect> list, Map<Long, FaceAlignment> byPhoto) {
+        for (Defect d : list) {
+            FaceAlignment a = byPhoto.get(d.getPhoto().getId());
+            if (a != null) {
+                d.place(a.toHomography());
+            }
+        }
+    }
+}

@@ -37,6 +37,13 @@ spring:
     virtual-host: ${RABBITMQ_VHOST:/}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    # trace.inspect.completed 소비(CA2): 일시 오류는 3번 시도, 그래도 실패하면 다시 넣지 않고 trace.dlx로
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
   # auth-server가 발급한 RS256 JWT를 JWKS로 검증한다
   security:
     oauth2:
