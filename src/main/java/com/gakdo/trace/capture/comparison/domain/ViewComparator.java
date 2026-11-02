@@ -18,7 +18,8 @@ import com.gakdo.trace.capture.captureset.domain.Face;
  *   <li>여러 지금 흠집이 같은 이전 흠집과 짝지어질 수 있다. 같은 흠집이 CAM1·CAM2·조명별 사진에서 여러 번 탐지되거나,
  *       긴 긁힘이 둘로 나뉘어 탐지되기 때문이다(defect_match.prev_defect_id는 고유가 아니다).</li>
  *   <li>면이 지금이나 이전 시점에서 판정 불가면 그 면의 흠집은 비교하지 않고 unjudgedDefectIds로 돌려준다.</li>
- *   <li>이전 시점이 없으면(첫 시점) 판정할 수 있는 면의 흠집은 모두 NEW다.</li>
+ *   <li>이전 시점은 같은 렌탈의 바로 앞 시점이다(수령 ↔ 출고, 반납 ↔ 수령). 이전 시점이 없으면(출고, 기준선) 짝을 만들지 않고
+ *       matches·unjudgedDefectIds가 빈 결과를 돌려준다.</li>
  * </ul>
  * 상태가 없고 같은 입력에는 같은 결과를 낸다.
  */
@@ -33,11 +34,12 @@ public final class ViewComparator {
     public ComparisonResult compare(ViewSnapshot previous, ViewSnapshot current) {
         List<DefectMatch> matches = new ArrayList<>();
         List<String> unjudged = new ArrayList<>();
+        if (previous == null) {
+            return new ComparisonResult(rule.version(), matches, unjudged);
+        }
         for (DefectObservation defect : current.defects()) {
             if (!comparable(defect.face(), previous, current)) {
                 unjudged.add(defect.defectId());
-            } else if (previous == null) {
-                matches.add(new DefectMatch(defect.defectId(), MatchStatus.NEW, null, null));
             } else {
                 matches.add(judge(defect, previous.defects()));
             }
@@ -47,7 +49,7 @@ public final class ViewComparator {
 
     private static boolean comparable(Face face, ViewSnapshot previous, ViewSnapshot current) {
         Set<Face> now = current.judgeableFaces();
-        return now.contains(face) && (previous == null || previous.judgeableFaces().contains(face));
+        return now.contains(face) && previous.judgeableFaces().contains(face);
     }
 
     private DefectMatch judge(DefectObservation defect, List<DefectObservation> before) {

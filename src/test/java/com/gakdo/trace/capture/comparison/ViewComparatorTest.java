@@ -116,11 +116,32 @@ class ViewComparatorTest {
     }
 
     @Test
-    @DisplayName("이전 시점이 없으면(첫 시점) 판정할 수 있는 면의 흠집은 모두 신규다")
-    void firstCheckpointAllNew() {
+    @DisplayName("출고는 기준선이라 이전 시점이 없으면 짝을 만들지 않는다")
+    void checkoutIsBaseline() {
         ComparisonResult r = comparator.compare(null, snap(d("c1", Face.SF, DefectClass.DENT, box(5, 5, 2, 2))));
 
-        assertThat(r.matches()).containsExactly(new DefectMatch("c1", MatchStatus.NEW, null, null));
+        assertThat(r.ruleVersion()).isEqualTo("view-match-v1");
+        assertThat(r.matches()).isEmpty();
+        assertThat(r.unjudgedDefectIds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("DB의 표준 좌표 px polygon은 mm로 바꿔 비교한다: 20 px = 5 mm 안이면 기존")
+    void standardPxIsConvertedToMm() {
+        DefectObservation prev = DefectObservation.fromStandardPx("p1", Face.TOP, DefectClass.SCRATCH,
+                List.of(List.of(0.0, 0.0), List.of(40.0, 0.0), List.of(40.0, 4.0), List.of(0.0, 4.0)));
+        DefectObservation near = DefectObservation.fromStandardPx("c1", Face.TOP, DefectClass.SCRATCH,
+                List.of(List.of(0.0, 24.0), List.of(40.0, 24.0), List.of(40.0, 28.0), List.of(0.0, 28.0)));
+        DefectObservation far = DefectObservation.fromStandardPx("c2", Face.TOP, DefectClass.SCRATCH,
+                List.of(List.of(0.0, 25.0), List.of(40.0, 25.0), List.of(40.0, 29.0), List.of(0.0, 29.0)));
+
+        assertThat(prev.polygon().get(1)).isEqualTo(new Point(10, 0));
+        assertThat(comparator.compare(snap(prev), snap(near, far)).matches()).containsExactly(
+                new DefectMatch("c1", MatchStatus.EXISTING, "p1", 5.0),
+                new DefectMatch("c2", MatchStatus.NEW, null, 5.25));
+        assertThatThrownBy(() -> DefectObservation.fromStandardPx("x", Face.TOP, DefectClass.DENT,
+                List.of(List.of(1.0), List.of(1.0, 2.0), List.of(2.0, 2.0))))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
