@@ -8,7 +8,7 @@ import com.gakdo.trace.capture.inspection.domain.CheckpointKind;
 import com.gakdo.trace.capture.inspection.domain.Grade;
 
 /**
- * 내는 이벤트 contracts events/trace.checkpoint.graded.schema.json 1.0. 봉투 + 본문.
+ * 내는 이벤트 contracts events/trace.checkpoint.graded.schema.json 1.1. 봉투 + 본문.
  * report-server(해시 체인 재료·타임라인 등급)와 rental-server(시점 GRADED)가 받는다.
  */
 public record CheckpointGradedEvent(
@@ -23,11 +23,16 @@ public record CheckpointGradedEvent(
         String ruleVersion,
         List<String> newDefectIds,
         List<Face> unjudgeableFaces,
-        List<PhotoHash> photos) {
+        List<PhotoHash> photos,
+        List<Pin> pins) {
 
     public static final String ROUTING_KEY = "trace.checkpoint.graded";
-    public static final String SCHEMA_VERSION = "1.0";
+    public static final String SCHEMA_VERSION = "1.1";
 
     public record PhotoHash(String photoId, String sha256) {
+    }
+
+    /** 1.1: 리포트 3D 핀. 같은 흠집 묶음 하나에 하나, 표준 좌표 px 중심. isNew는 newDefectIds에 있으면 true. */
+    public record Pin(String defectId, Face face, double x, double y, boolean isNew) {
     }
 }
