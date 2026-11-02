@@ -30,6 +30,7 @@ import com.gakdo.trace.capture.comparison.domain.MatchStatus;
 import com.gakdo.trace.capture.comparison.domain.ViewComparator;
 import com.gakdo.trace.capture.comparison.domain.ViewSnapshot;
 import com.gakdo.trace.capture.inspection.application.CheckpointGradedEvent.PhotoHash;
+import com.gakdo.trace.capture.inspection.application.CheckpointGradedEvent.Pin;
 import com.gakdo.trace.capture.inspection.domain.CheckpointKind;
 import com.gakdo.trace.capture.inspection.domain.Defect;
 import com.gakdo.trace.capture.inspection.domain.DefectGroups;
@@ -53,6 +54,8 @@ public class GradingService {
 
     private static final Logger log = LoggerFactory.getLogger(GradingService.class);
     private static final MatchRule RULE = MatchRule.V1;
+    /** 계약 trace.checkpoint.graded pins maxItems */
+    static final int MAX_PINS = 500;
 
     private final DefectRepository defects;
     private final DefectMatchRepository matches;
@@ -121,8 +124,8 @@ public class GradingService {
         List<DefectGroups.Item> items = current.stream()
                 .map(d -> new DefectGroups.Item(observe(d), d.getLengthMm(), status.get(d.getPublicId())))
                 .toList();
-        GradeRules.Outcome outcome = GradeRules.evaluate(DefectGroups.group(items, RULE), unjudgeable,
-                previous.isEmpty());
+        List<DefectGroups.Group> groups = DefectGroups.group(items, RULE);
+        GradeRules.Outcome outcome = GradeRules.evaluate(groups, unjudgeable, previous.isEmpty());
 
         GradeResult result = grades.findByCheckpointId(set.getCheckpointId())
                 .orElseGet(() -> new GradeResult(set.getCheckpointId()));
@@ -134,7 +137,7 @@ public class GradingService {
         CheckpointKind kind = CheckpointKind.infer(set.getSource(), previous.isPresent());
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
-                outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set)));
+                outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds)));
         log.info("등급 set={} checkpoint={} type={} grade={} 신규={} 판정불가={} 비교={}", set.getPublicId(),
                 set.getCheckpointId(), kind, outcome.grade(), newIds.size(), unjudgeableFaces,
                 previous.map(GradeResult::getCheckpointId).orElse("없음(기준선)"));
@@ -174,6 +177,48 @@ public class GradingService {
     private static DefectObservation observe(Defect d) {
         return DefectObservation.fromStandardPx(d.getPublicId(), d.getPhoto().getFace(), d.getDefectClass(),
                 d.getPolygon());
+    }
+
+    /**
+     * 묶음마다 핀 하나. 대표 흠집은 isNew와 newDefectIds가 어긋나지 않게 고른다
+     * (신규 묶음이면 첫 NEW 흠집, 아니면 첫 NEW가 아닌 흠집). 위치는 대표 흠집 다각형 꼭짓점의 평균(표준 px).
+     */
+    static List<Pin> pins(List<DefectGroups.Group> groups, Map<String, Defect> byId, List<String> newIds) {
+        Set<String> fresh = new HashSet<>(newIds);
+        List<Pin> pins = new ArrayList<>();
+        for (DefectGroups.Group g : groups) {
+            boolean isNew = Boolean.TRUE.equals(g.isNew());
+            String id = g.defectIds().stream().filter(d -> fresh.contains(d) == isNew).findFirst()
+                    .orElse(g.defectIds().get(0));
+            Defect d = byId.get(id);
+            if (d == null || d.getPolygon() == null || d.getPolygon().isEmpty()) {
+                continue;
+            }
+            double x = 0;
+            double y = 0;
+            for (List<Double> point : d.getPolygon()) {
+                x += point.get(0);
+                y += point.get(1);
+            }
+            int n = d.getPolygon().size();
+            pins.add(new Pin(id, g.face(), Math.max(0, x / n), Math.max(0, y / n), fresh.contains(id)));
+        }
+        return limit(pins, MAX_PINS);
+    }
+
+    /**
+     * 핀은 화면용이라 상한을 넘으면 잘라 계약(maxItems)을 지킨다. 새 흠집 핀을 먼저 남기고, 같은 종류 안에서는 원래 순서를 지킨다.
+     * 등급·newDefectIds는 그대로라 판정에는 영향이 없다.
+     */
+    static List<Pin> limit(List<Pin> pins, int max) {
+        if (pins.size() <= max) {
+            return pins;
+        }
+        List<Pin> kept = new ArrayList<>(max);
+        pins.stream().filter(Pin::isNew).limit(max).forEach(kept::add);
+        pins.stream().filter(p -> !p.isNew()).limit(max - kept.size()).forEach(kept::add);
+        log.warn("핀이 {}개라 {}개만 싣습니다(새 흠집 우선)", pins.size(), max);
+        return kept;
     }
 
     /** 해시 체인 재료: 올라갔고 건너뛰지 않은 사진. */

@@ -193,6 +193,17 @@ class InspectionFlowIntegrationTest {
         assertThat(retEvent.get("grade").asText()).isEqualTo("C");
         assertThat(texts(retEvent.get("newDefectIds")))
                 .containsExactly(retResult.get("defects").get(1).get("defectId").asText());
+        // 1.1 핀: 묶음마다 하나, 신규 핀의 defectId는 newDefectIds와 같다
+        assertThat(retEvent.get("schemaVersion").asText()).isEqualTo("1.1");
+        assertThat(retEvent.get("pins")).hasSize(2);
+        List<String> newPins = new ArrayList<>();
+        retEvent.get("pins").forEach(pin -> {
+            assertThat(pin.get("face").asText()).isEqualTo("TOP");
+            if (pin.get("isNew").asBoolean()) {
+                newPins.add(pin.get("defectId").asText());
+            }
+        });
+        assertThat(newPins).containsExactlyElementsOf(texts(retEvent.get("newDefectIds")));
 
         // 등급이 매겨진 세트에 다시 보내면 409, 본인 렌탈이 아닌 고객은 403
         mvc.perform(post("/api/v1/captures/sets/" + retSet + "/detections").with(booth())
