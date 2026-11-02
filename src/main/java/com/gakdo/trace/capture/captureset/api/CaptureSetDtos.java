@@ -6,14 +6,17 @@ import java.util.Map;
 
 import com.gakdo.trace.capture.captureset.domain.Camera;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
+import com.gakdo.trace.capture.captureset.domain.DeviceModel;
 import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.captureset.domain.Light;
 import com.gakdo.trace.capture.common.infra.PublicIds;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 /** contracts openapi/capture-server.yaml의 촬영 요청 스키마. 응답은 application.CaptureSetResults. */
@@ -37,7 +40,27 @@ public final class CaptureSetDtos {
             @NotNull @Pattern(regexp = PublicIds.PATTERN, message = "NanoID 21자여야 합니다") String rentalId,
             @NotNull @Pattern(regexp = PublicIds.PATTERN, message = "NanoID 21자여야 합니다") String checkpointId,
             @NotNull CaptureSource source,
-            @NotNull @Size(min = 1, max = 54) List<@Valid @NotNull PhotoSpecRequest> photos) {
+            @NotNull @Size(min = 1, max = 54) List<@Valid @NotNull PhotoSpecRequest> photos,
+            @Valid CaptureDeviceRequest device) {
+    }
+
+    /** contracts CaptureDevice. 클라이언트가 rental-server 기종 정보를 그대로 옮긴다. */
+    public record CaptureDeviceRequest(
+            @NotNull @Pattern(regexp = "^[A-Z0-9][A-Z0-9-]{1,63}$", message = "기종 코드 형식이 아닙니다") String modelCode,
+            @NotNull @Valid DimensionsRequest dimensions) {
+
+        public DeviceModel toDomain() {
+            return new DeviceModel(modelCode, new DeviceModel.Dimensions(dimensions.widthMm(), dimensions.depthMm(),
+                    dimensions.baseHMm(), dimensions.lidHMm()));
+        }
+    }
+
+    /** contracts rental-server ModelDimensions(mm). 0보다 커야 한다. */
+    public record DimensionsRequest(
+            @NotNull @Positive @DecimalMax("1000") Double widthMm,
+            @NotNull @Positive @DecimalMax("1000") Double depthMm,
+            @NotNull @Positive @DecimalMax("100") Double baseHMm,
+            @NotNull @Positive @DecimalMax("100") Double lidHMm) {
     }
 
     /** 업로드 URL 다시 받기에서 사진 한 장을 가리킨다(contracts UploadReissueRequest.photos[]). */

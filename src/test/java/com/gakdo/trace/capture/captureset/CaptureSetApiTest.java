@@ -261,6 +261,7 @@ class CaptureSetApiTest extends WebTestBase {
         assertThat(e.skippedFaces()).isEmpty();
         JsonNode serialized = json.valueToTree(e);
         assertThat(serialized.has("skippedFaces")).isFalse();
+        assertThat(serialized.has("device")).isFalse(); // 기종을 안 보내면 이벤트에서도 뺀다
         assertThat(serialized.get("eventId").asText()).matches("^[A-Za-z0-9_-]{21}$");
     }
 
@@ -283,6 +284,34 @@ class CaptureSetApiTest extends WebTestBase {
         verify(events, never()).publishUploaded(any());
         mvc.perform(get("/api/v1/captures/sets/" + setId).with(admin()))
                 .andExpect(jsonPath("$.status").value("UPLOADING"));
+    }
+
+    @Test
+    @DisplayName("세트 생성에 기종·치수(device)를 보내면 완료 이벤트 trace.capture.uploaded에 그대로 실린다")
+    void deviceForwarded() throws Exception {
+        String body = phoneBody().replaceFirst("\\}$", "," + DEVICE + "}");
+        String setId = created(capture(), body).get("captureSetId").asText();
+        uploadAll(setId);
+        complete(setId, capture(), "key-00000001", "{}").andExpect(status().isAccepted());
+        ArgumentCaptor<CaptureUploadedEvent> event = ArgumentCaptor.forClass(CaptureUploadedEvent.class);
+        verify(events).publishUploaded(event.capture());
+        JsonNode device = json.valueToTree(event.getValue()).get("device");
+        assertThat(device.get("modelCode").asText()).isEqualTo("GRAM16-2024");
+        assertThat(device.get("dimensions").get("widthMm").asDouble()).isEqualTo(357.7);
+        assertThat(device.get("dimensions").get("lidHMm").asDouble()).isEqualTo(5.0);
+    }
+
+    @Test
+    @DisplayName("기종 치수가 0 이하이거나 기종 코드 형식이 틀리면 400 VALIDATION_FAILED")
+    void deviceInvalid() throws Exception {
+        String zero = phoneBody().replaceFirst("\\}$", "," + DEVICE.replace("357.7", "0") + "}");
+        perform(post("/api/v1/captures/sets").with(capture()), zero)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        String lower = phoneBody().replaceFirst("\\}$", "," + DEVICE.replace("GRAM16-2024", "gram16") + "}");
+        perform(post("/api/v1/captures/sets").with(capture()), lower)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
     }
 
     @Test
@@ -541,6 +570,9 @@ class CaptureSetApiTest extends WebTestBase {
         }
         return setBody(RENTAL, CHECKPOINT, "BOOTH", photos);
     }
+
+    private static final String DEVICE = "\"device\":{\"modelCode\":\"GRAM16-2024\",\"dimensions\":"
+            + "{\"widthMm\":357.7,\"depthMm\":250.0,\"baseHMm\":11.0,\"lidHMm\":5.0}}";
 
     private static String phoneBody() {
         List<String> photos = new ArrayList<>(PHONE_FACES.stream().map(f -> photo(f, "ROOM", "PHONE")).toList());
