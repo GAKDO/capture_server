@@ -28,6 +28,7 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
 
 /**
@@ -42,12 +43,15 @@ public class S3PhotoStorage implements PhotoStorage {
     private final S3Presigner presigner;
     private final String bucket;
     private final String publicBase;
+    private final String derivedBucket;
 
     public S3PhotoStorage(S3Client s3, S3Presigner presigner, StorageProperties props) {
         this.s3 = s3;
         this.presigner = presigner;
         this.bucket = props.captureBucket();
         this.publicBase = normalizeBase(props.publicBase());
+        this.derivedBucket = props.derivedBucket() == null || props.derivedBucket().isBlank() ? "trace-derived"
+                : props.derivedBucket();
     }
 
     @Override
@@ -66,6 +70,14 @@ public class S3PhotoStorage implements PhotoStorage {
             }
         });
         return new UploadUrl(publicUrl(signed.url().toString(), publicBase), headers,
+                Times.utc(signed.expiration().atOffset(ZoneOffset.UTC)));
+    }
+
+    @Override
+    public ViewUrl presignDerivedGet(String objectKey, Duration ttl) {
+        PresignedGetObjectRequest signed = presigner.presignGetObject(r -> r.signatureDuration(ttl)
+                .getObjectRequest(g -> g.bucket(derivedBucket).key(objectKey)));
+        return new ViewUrl(publicUrl(signed.url().toString(), publicBase),
                 Times.utc(signed.expiration().atOffset(ZoneOffset.UTC)));
     }
 

@@ -52,19 +52,29 @@ public class InspectionQueryService {
     public record MatchView(String status, String prevDefectId, Double distanceMm) {
     }
 
-    @Transactional(readOnly = true)
-    public InspectionView get(Caller caller, String checkpointId) {
+    /**
+     * 시점에서 보여 줄 세트: 등급을 매긴 세트, 없으면 가장 최근 세트. 범위는 ADMIN 전부, 일반 고객은 본인 렌탈만, 촬영 JWT는 403.
+     * 미디어 조회(MediaService)도 같은 규칙을 쓴다.
+     */
+    static CaptureSet visibleSet(Caller caller, String checkpointId, GradeResultRepository grades,
+            CaptureSetRepository sets) {
         boolean customerLogin = "CUSTOMER".equals(caller.role()) && !caller.isCaptureToken();
         if (!caller.isAdmin() && !customerLogin) {
             throw new DomainException(ErrorCode.FORBIDDEN, "관리자나 고객 로그인 토큰만 볼 수 있습니다.");
         }
-        Optional<GradeResult> grade = grades.findByCheckpointId(checkpointId);
-        CaptureSet set = grade.map(GradeResult::getCaptureSet)
+        CaptureSet set = grades.findByCheckpointId(checkpointId).map(GradeResult::getCaptureSet)
                 .or(() -> sets.findFirstByCheckpointIdOrderByIdDesc(checkpointId))
                 .orElseThrow(() -> DomainException.notFound("시점의 검사 결과"));
         if (!caller.isAdmin() && !caller.ownsRental(set.getRentalId())) {
             throw Caller.outOfScope();
         }
+        return set;
+    }
+
+    @Transactional(readOnly = true)
+    public InspectionView get(Caller caller, String checkpointId) {
+        Optional<GradeResult> grade = grades.findByCheckpointId(checkpointId);
+        CaptureSet set = visibleSet(caller, checkpointId, grades, sets);
 
         Map<Long, DefectMatchRecord> byDefect = new HashMap<>();
         matches.findBySet(set).forEach(m -> byDefect.put(m.getDefect().getId(), m));

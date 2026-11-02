@@ -20,6 +20,12 @@ public interface PhotoStorage {
     /** 객체가 있는지(해시 확인 없이). */
     boolean exists(String objectKey);
 
+    /** 버킷 trace-derived 객체(텍스처 등)의 사전 서명 GET URL. 3D 리포트가 직접 내려받는다(CA2 /media). */
+    ViewUrl presignDerivedGet(String objectKey, Duration ttl);
+
+    record ViewUrl(String url, OffsetDateTime expiresAt) {
+    }
+
     record UploadUrl(String url, Map<String, String> headers, OffsetDateTime expiresAt) {
     }
 }

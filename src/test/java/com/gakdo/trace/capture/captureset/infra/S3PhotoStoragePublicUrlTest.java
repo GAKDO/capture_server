@@ -51,7 +51,7 @@ class S3PhotoStoragePublicUrlTest {
     @Test
     void 사전_서명_URL은_공개_주소로_시작하고_버킷_경로와_서명_쿼리를_담는다() {
         StorageProperties props = new StorageProperties("http://minio:9000", "test-access", "test-secret", "us-east-1",
-                "trace-captures", Duration.ofMinutes(10), "https://gakdo.site/");
+                "trace-captures", Duration.ofMinutes(10), "https://gakdo.site/", "trace-derived", Duration.ofMinutes(10));
         S3Config config = new S3Config();
         try (var s3 = config.s3Client(props); var presigner = config.s3Presigner(props)) {
             UploadUrl upload = new S3PhotoStorage(s3, presigner, props)
@@ -59,6 +59,20 @@ class S3PhotoStoragePublicUrlTest {
 
             assertThat(upload.url()).startsWith("https://gakdo.site/trace-captures/sets/abc/TOP_L1_CAM1.jpg?")
                     .contains("X-Amz-Signature=").doesNotContain("minio:9000");
+        }
+    }
+
+    @Test
+    void 텍스처_보기_URL은_trace_derived_버킷의_사전_서명_GET이고_공개_주소로_시작한다() {
+        StorageProperties props = new StorageProperties("http://minio:9000", "test-access", "test-secret", "us-east-1",
+                "trace-captures", Duration.ofMinutes(10), "https://gakdo.site/", "trace-derived", Duration.ofMinutes(10));
+        S3Config config = new S3Config();
+        try (var s3 = config.s3Client(props); var presigner = config.s3Presigner(props)) {
+            var view = new S3PhotoStorage(s3, presigner, props)
+                    .presignDerivedGet("textures/set1/TOP.jpg", Duration.ofMinutes(10));
+            assertThat(view.url()).startsWith("https://gakdo.site/trace-derived/textures/set1/TOP.jpg?")
+                    .contains("X-Amz-Signature=");
+            assertThat(view.expiresAt()).isNotNull();
         }
     }
 }
