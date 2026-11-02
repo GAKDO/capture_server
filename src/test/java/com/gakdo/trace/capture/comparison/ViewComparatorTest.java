@@ -136,6 +136,9 @@ class ViewComparatorTest {
     void validation() {
         assertThatThrownBy(() -> new MatchRule("", 5, 2)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new MatchRule("v", -1, 2)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new MatchRule("v", Double.NaN, 2)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new MatchRule("v", 5, Double.POSITIVE_INFINITY))
+                .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> d("x", Face.TOP, DefectClass.DENT, List.of(new Point(0, 0), new Point(1, 1))))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new Point(Double.NaN, 0)).isInstanceOf(IllegalArgumentException.class);

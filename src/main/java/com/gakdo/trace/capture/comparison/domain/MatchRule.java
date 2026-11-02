@@ -19,8 +19,9 @@ public record MatchRule(String version, double maxGapMm, double classChangePenal
         if (version == null || version.isBlank() || version.length() > 32) {
             throw new IllegalArgumentException("version은 1~32자");
         }
-        if (maxGapMm < 0 || classChangePenaltyMm < 0) {
-            throw new IllegalArgumentException("거리는 0 이상");
+        if (!Double.isFinite(maxGapMm) || !Double.isFinite(classChangePenaltyMm)
+                || maxGapMm < 0 || classChangePenaltyMm < 0) {
+            throw new IllegalArgumentException("거리는 유한한 0 이상");
         }
     }
 
