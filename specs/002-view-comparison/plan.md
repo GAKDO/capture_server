@@ -28,10 +28,9 @@ src/test/java/com/gakdo/trace/capture/comparison/
 
 `Face`는 CA1의 `captureset.domain.Face`를 그대로 쓴다(읽기만).
 
-## A가 붙일 때 (연결 메모)
+## A가 붙일 때 (연결 메모, 11/2 A 답 반영)
 
-1. 이전 시점 = 같은 렌탈에서 지금보다 앞선 시점 중 가장 최근 것(출고 → 수령 → 반납).
-2. `ViewSnapshot(defects, judgeableFaces)`: defects는 `inspection.defect`의 `public_id`·`photo.face`·`class`·`polygon`, judgeableFaces는 판정 불가가 아닌 면.
-3. `new ViewComparator(MatchRule.V1).compare(prev, now)` → `DefectMatch`를 `inspection.defect_match`에 한 행씩. `unjudgedDefectIds`는 행을 만들지 않는다.
-4. `ruleVersion`은 DDL에 칸이 없다. `grade_result.reasons`에 `matchRuleVersion`으로 넣거나 칸을 더할지 A가 정한다.
-5. polygon 단위는 mm(이벤트 스키마). 펼친 이미지 px로 저장했다면 4로 나눠 넘긴다(1 px = 0.25 mm).
+1. 이전 시점 = 같은 렌탈의 바로 앞 시점. 수령은 출고와, 반납은 수령과 비교한다. 출고는 기준선이라 `compare(null, now)`는 빈 결과(짝 없음)를 돌려준다.
+2. `ViewSnapshot(defects, judgeableFaces)`: defects는 `DefectObservation.fromStandardPx(public_id, photo.face, class, polygon)`로 만든다. DB `inspection.defect.polygon`은 표준 좌표 px이고(1 px = 0.25 mm), 모듈 안에서 mm로 바꿔 거리를 잰다. judgeableFaces는 판정 불가가 아닌 면.
+3. `new ViewComparator(MatchRule.V1).compare(prev, now)` → `DefectMatch`를 `inspection.defect_match`에 한 행씩. `distance_mm`은 mm 그대로, `rule_version`(A가 CA2 마이그레이션에서 만드는 varchar 32 필수 칸)에는 `ComparisonResult.ruleVersion`을 넣는다. `unjudgedDefectIds`는 행을 만들지 않는다.
+4. 5 mm 문턱 = 표준 좌표 20 px.
