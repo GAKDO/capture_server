@@ -4,8 +4,7 @@ name: backend-ci
 # 언제 도나: ① PR ② develop push ③ 배포(deploy.yml)가 main·develop 이미지 전에 불러 쓸 때(workflow_call)
 # 흐름: 코드 받기 → Java 21 → mvnw verify(테스트 + JaCoCo 40%) → 커버리지 보고서 → (켜져 있으면) SonarQube → 실패 시 테스트 보고서
 on:
-  pull_request:
-    paths-ignore: ["**/*.md"]
+  pull_request:   # PR은 문서만 바뀌어도 돈다: 필수 검사가 '대기'로 멈춰 머지가 막히지 않게
   push:
     branches: [develop]
     paths-ignore: ["**/*.md"]
