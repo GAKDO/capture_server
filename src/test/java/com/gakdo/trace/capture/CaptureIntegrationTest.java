@@ -36,9 +36,10 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
-import org.testcontainers.containers.MinIOContainer;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.RabbitMQContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -50,8 +51,8 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 
 /**
- * 실제 PostgreSQL(Flyway V1)·RabbitMQ·MinIO로 생성 → 사전 서명 PUT → 완료 → 이벤트 → 내려받은 해시를 확인한다.
- * Docker가 없으면 건너뛴다(Claude 세션). S3_TEST_ENDPOINT를 주면 MinIO 컨테이너 대신 그 S3 호환 주소를 쓴다.
+ * 실제 PostgreSQL(Flyway V1)·RabbitMQ·S3 호환 저장소로 생성 → 사전 서명 PUT → 완료 → 이벤트 → 내려받은 해시를 확인한다.
+ * Docker가 없으면 건너뛴다. S3_TEST_ENDPOINT를 주면 컨테이너 대신 그 S3 호환 주소(예: 실제 MinIO)를 쓴다.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -71,16 +72,25 @@ class CaptureIntegrationTest {
     @ServiceConnection
     static final RabbitMQContainer RABBIT = new RabbitMQContainer("rabbitmq:3.13-management-alpine");
 
-    static final MinIOContainer MINIO = new MinIOContainer("minio/minio:RELEASE.2025-04-22T22-12-26Z");
+    /**
+     * S3 호환 저장소. MinIO는 Docker Hub 공개 이미지 배포를 멈춰(pull access denied) CI에서 받을 수 없어,
+     * mirror.gcr.io의 moto 서버를 쓴다. moto는 x-amz-checksum-sha256 내용 검사를 하지 않으므로 "다른 파일 거절"은
+     * S3_TEST_VERIFIES_CHECKSUM=true(실제 MinIO 주소)일 때만 확인한다.
+     */
+    static final GenericContainer<?> S3 = new GenericContainer<>("mirror.gcr.io/motoserver/moto:5.1.16")
+            .withExposedPorts(5000)
+            .waitingFor(Wait.forHttp("/").forStatusCode(200));
+    private static final boolean VERIFIES_CHECKSUM = "true".equals(System.getenv("S3_TEST_VERIFIES_CHECKSUM"));
 
     @DynamicPropertySource
     static void storage(DynamicPropertyRegistry registry) {
         if (EXTERNAL_S3 == null) {
-            MINIO.start();
+            S3.start();
         }
-        registry.add("app.storage.endpoint", () -> EXTERNAL_S3 != null ? EXTERNAL_S3 : MINIO.getS3URL());
-        registry.add("app.storage.access-key", () -> EXTERNAL_S3 != null ? "test" : MINIO.getUserName());
-        registry.add("app.storage.secret-key", () -> EXTERNAL_S3 != null ? "test" : MINIO.getPassword());
+        registry.add("app.storage.endpoint", () -> EXTERNAL_S3 != null ? EXTERNAL_S3
+                : "http://" + S3.getHost() + ":" + S3.getMappedPort(5000));
+        registry.add("app.storage.access-key", () -> System.getenv().getOrDefault("S3_TEST_ACCESS_KEY", "test"));
+        registry.add("app.storage.secret-key", () -> System.getenv().getOrDefault("S3_TEST_SECRET_KEY", "test"));
         registry.add("app.storage.capture-bucket", () -> BUCKET);
     }
 
@@ -132,8 +142,8 @@ class CaptureIntegrationTest {
         JsonNode createdJson = json.readTree(created);
         String setId = createdJson.get("captureSetId").asText();
 
-        // 알린 해시와 다른 파일은 저장소가 거절한다(서명된 x-amz-checksum-sha256). 체크섬을 검사하지 않는 대체 S3에서는 건너뛴다
-        if (EXTERNAL_S3 == null) {
+        // 알린 해시와 다른 파일은 저장소가 거절한다(서명된 x-amz-checksum-sha256). 체크섬을 검사하는 MinIO에서만 확인
+        if (VERIFIES_CHECKSUM) {
             JsonNode first = createdJson.get("uploads").get(0);
             assertThat(put(first, "다른 사진".getBytes())).isBetween(400, 499);
         }
