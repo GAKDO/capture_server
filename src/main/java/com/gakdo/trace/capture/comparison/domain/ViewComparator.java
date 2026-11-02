@@ -3,6 +3,7 @@ package com.gakdo.trace.capture.comparison.domain;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.Set;
@@ -26,7 +27,7 @@ public final class ViewComparator {
     private final MatchRule rule;
 
     public ViewComparator(MatchRule rule) {
-        this.rule = rule;
+        this.rule = Objects.requireNonNull(rule, "rule은 필수");
     }
 
     public ComparisonResult compare(ViewSnapshot previous, ViewSnapshot current) {

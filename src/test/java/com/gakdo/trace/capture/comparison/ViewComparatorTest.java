@@ -132,12 +132,14 @@ class ViewComparatorTest {
     }
 
     @Test
-    @DisplayName("규칙은 버전 이름(1~32자)과 0 이상 거리만 받고, 폴리곤은 꼭짓점 3개 이상이어야 한다")
+    @DisplayName("규칙은 버전 이름(1~32자)과 0 이상 거리만 받고, 좌표는 유한하고 폴리곤은 꼭짓점 3개 이상이어야 한다")
     void validation() {
         assertThatThrownBy(() -> new MatchRule("", 5, 2)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new MatchRule("v", -1, 2)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> d("x", Face.TOP, DefectClass.DENT, List.of(new Point(0, 0), new Point(1, 1))))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new Point(Double.NaN, 0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ViewComparator(null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
