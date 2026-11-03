@@ -24,10 +24,19 @@ public record CheckpointGradedEvent(
         List<String> newDefectIds,
         List<Face> unjudgeableFaces,
         List<PhotoHash> photos,
-        List<Pin> pins) {
+        List<Pin> pins,
+        boolean compared) {
 
     public static final String ROUTING_KEY = "trace.checkpoint.graded";
     public static final String SCHEMA_VERSION = "1.1";
+
+    /** 앞 시점과 비교하지 않은 빠른 검사(QUICK)만 compared=false. 그 밖에는 true(계약: 없으면 true). */
+    public CheckpointGradedEvent(String schemaVersion, String eventId, OffsetDateTime occurredAt, String rentalId,
+            String checkpointId, String captureSetId, CheckpointKind checkpointType, Grade grade, String ruleVersion,
+            List<String> newDefectIds, List<Face> unjudgeableFaces, List<PhotoHash> photos, List<Pin> pins) {
+        this(schemaVersion, eventId, occurredAt, rentalId, checkpointId, captureSetId, checkpointType, grade,
+                ruleVersion, newDefectIds, unjudgeableFaces, photos, pins, true);
+    }
 
     public record PhotoHash(String photoId, String sha256) {
     }

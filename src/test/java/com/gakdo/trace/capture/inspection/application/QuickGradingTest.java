@@ -78,6 +78,7 @@ class QuickGradingTest {
         assertThat(sent.getValue().grade()).isEqualTo(Grade.A);
         assertThat(sent.getValue().pins()).isEmpty();
         assertThat(sent.getValue().photos()).hasSize(12);
+        assertThat(sent.getValue().compared()).isFalse(); // 앞 시점과 비교하지 않음: 빈 newDefectIds가 '신규 없음'이 아니다
     }
 
     @Test

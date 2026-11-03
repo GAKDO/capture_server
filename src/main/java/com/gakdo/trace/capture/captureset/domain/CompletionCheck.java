@@ -17,6 +17,9 @@ import com.gakdo.trace.capture.common.domain.ErrorCode;
  */
 public final class CompletionCheck {
 
+    /** 빠른 검사 필수 면마다 있어야 하는 카메라(contracts capture-server.yaml 세트 완료). */
+    private static final Set<Camera> QUICK_CAMERAS = EnumSet.of(Camera.CAM1, Camera.CAM2);
+
     private CompletionCheck() {
     }
 
@@ -80,6 +83,16 @@ public final class CompletionCheck {
         for (Face face : FaceRules.required(source, profile)) {
             if (!complete.getOrDefault(face, false)) {
                 missing.add(face);
+            }
+        }
+        if (profile == CaptureProfile.QUICK) {
+            // 두 카메라가 면의 앞·뒤 반을 나눠 찍으므로, 한 카메라만 올라온 면은 반만 검사한 것이라 빠진 면으로 본다
+            for (Face face : FaceRules.required(source, profile)) {
+                Set<Camera> cams = EnumSet.noneOf(Camera.class);
+                photos.stream().filter(p -> p.face() == face && p.present()).forEach(p -> cams.add(p.camera()));
+                if (!cams.containsAll(QUICK_CAMERAS)) {
+                    missing.add(face);
+                }
             }
         }
         if (!missing.isEmpty()) {

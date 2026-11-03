@@ -17,3 +17,8 @@
 
 - QuickSetDomainTest: profile 없이 만든 부스 세트는 8면 필요, QUICK은 TOP·BOT 사진만으로 완료, BOT 빠지면 409, 폰 QUICK 400.
 - QuickGradingTest: 흠집 0개면 A, 긁힘 2개 B, 찍힘 C, 탐지 전·완료 전에는 등급 없음, L1·L2·L3 같은 자리 흠집은 한 번만.
+
+## 리뷰 반영 (11/3, contracts #20 CodeRabbit)
+
+- 빠른 검사 필수 면(TOP·BOT)은 CAM1·CAM2 사진이 모두 올라와야 완료된다. 한 카메라만 있으면 409 CAPTURE_FACES_MISSING(QuickSetDomainTest).
+- 빠른 검사 등급 이벤트는 `compared: false`(앞 시점과 비교하지 않음). 정합 세트는 `compared: true`.

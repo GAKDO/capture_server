@@ -77,6 +77,18 @@ class QuickSetDomainTest {
     }
 
     @Test
+    @DisplayName("빠른 검사 세트에서 한 면이 CAM1으로만 올라오면 반만 찍힌 것이라 409 CAPTURE_FACES_MISSING")
+    void quickNeedsBothCameras() {
+        List<PhotoState> states = quickStates(SHA);
+        states.removeIf(p -> p.face() == Face.TOP && p.camera() == Camera.CAM2);
+        assertThatThrownBy(() -> CompletionCheck.check(CaptureSource.BOOTH, CaptureProfile.QUICK, states, Map.of()))
+                .isInstanceOfSatisfying(DomainException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.CAPTURE_FACES_MISSING);
+                    assertThat(e.properties().get("missingFaces")).isEqualTo(List.of(Face.TOP));
+                });
+    }
+
+    @Test
     @DisplayName("폰으로 빠른 검사 세트를 만들면 400(profile)")
     void quickPhoneRejected() {
         List<PhotoSpec> phone = List.of(new PhotoSpec(Face.TOP, Light.ROOM, Camera.PHONE, "jpg", SHA, now()));
