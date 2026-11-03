@@ -292,7 +292,7 @@ public class GradingService {
         }
         List<Pin> kept = new ArrayList<>(max);
         pins.stream().filter(Pin::isNew).limit(max).forEach(kept::add);
-        pins.stream().filter(p -> !p.isNew()).limit(max - kept.size()).forEach(kept::add);
+        pins.stream().filter(p -> !p.isNew()).limit((long) max - kept.size()).forEach(kept::add);
         log.warn("핀이 {}개라 {}개만 싣습니다(새 흠집 우선)", pins.size(), max);
         return kept;
     }
