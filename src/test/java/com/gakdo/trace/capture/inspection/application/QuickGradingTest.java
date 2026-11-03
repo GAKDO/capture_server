@@ -77,7 +77,7 @@ class QuickGradingTest {
         verify(events).publishGraded(sent.capture());
         assertThat(sent.getValue().grade()).isEqualTo(Grade.A);
         assertThat(sent.getValue().pins()).isEmpty();
-        assertThat(sent.getValue().photos()).hasSize(8);
+        assertThat(sent.getValue().photos()).hasSize(12);
     }
 
     @Test
@@ -107,15 +107,17 @@ class QuickGradingTest {
     }
 
     @Test
-    @DisplayName("같은 카메라의 L1·L2 사진에 함께 잡힌 같은 흠집은 한 번만 세고, 다른 카메라는 따로 센다")
+    @DisplayName("같은 카메라의 L1·L2·L3 사진에 함께 잡힌 같은 흠집은 한 번만 세고, 다른 카메라는 따로 센다")
     void sameSpotAcrossLightsCountsOnce() {
         CaptureSet set = completedQuickSet();
         Photo topL1 = photo(set, Face.TOP, Camera.CAM1, Light.L1);
         Photo topL2 = photo(set, Face.TOP, Camera.CAM1, Light.L2);
+        Photo topL3 = photo(set, Face.TOP, Camera.CAM1, Light.L3);
         Photo topCam2 = photo(set, Face.TOP, Camera.CAM2, Light.L2);
         List<Defect> found = List.of(
                 Defect.fromBooth(topL1, DefectClass.SCRATCH, BOX, 0.7, "v"),
                 Defect.fromBooth(topL2, DefectClass.SCRATCH, BOX, 0.9, "v"),
+                Defect.fromBooth(topL3, DefectClass.SCRATCH, BOX, 0.8, "v"),
                 Defect.fromBooth(topCam2, DefectClass.SCRATCH, BOX, 0.9, "v"));
         assertThat(GradingService.quickGroups(found, Set.of(Face.TOP, Face.BOT))).hasSize(2);
     }
@@ -162,7 +164,7 @@ class QuickGradingTest {
         List<PhotoSpec> specs = new ArrayList<>();
         OffsetDateTime at = OffsetDateTime.parse("2026-11-05T10:00:00+09:00");
         for (Face face : List.of(Face.BOT, Face.TOP)) {
-            for (Light light : List.of(Light.L1, Light.L2)) {
+            for (Light light : List.of(Light.L1, Light.L2, Light.L3)) {
                 specs.add(new PhotoSpec(face, light, Camera.CAM1, "jpg", SHA, at));
                 specs.add(new PhotoSpec(face, light, Camera.CAM2, "jpg", SHA, at));
             }

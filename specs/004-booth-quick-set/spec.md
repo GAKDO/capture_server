@@ -10,10 +10,10 @@
 - 완료: QUICK은 codes.yaml `capture.face_required_quick.BOOTH`(TOP·BOT)로 빠진 면 검사.
 - 등급: QUICK은 완료(UPLOADED) + 부스 탐지가 있으면 정합 없이 바로 GRADED. 탐지가 먼저 왔으면 완료 때(QuickSetCompleted →
   QuickGradeListener), 완료가 먼저면 탐지 저장 때 매긴다. 시점 비교 없음, 길이 모름, 핀 없음.
-- 흠집 묶기: 같은 면·같은 카메라 사진끼리 원본 px 20 px 안이면 하나(조명 L1·L2에 함께 잡힌 같은 흠집을 한 번만 셈).
+- 흠집 묶기: 같은 면·같은 카메라 사진끼리 원본 px 20 px 안이면 하나(조명 L1·L2·L3에 함께 잡힌 같은 흠집을 한 번만 셈).
 - 조회: `/inspection` 흠집에 `coordinateSpace=PHOTO`·`camera`·`light`, polygon은 원본 px. `/media`에 `photos`(원본 사진 보기 URL).
 
 ## 수용 기준(시험)
 
 - QuickSetDomainTest: profile 없이 만든 부스 세트는 8면 필요, QUICK은 TOP·BOT 사진만으로 완료, BOT 빠지면 409, 폰 QUICK 400.
-- QuickGradingTest: 흠집 0개면 A, 긁힘 2개 B, 찍힘 C, 탐지 전·완료 전에는 등급 없음, L1·L2 같은 자리 흠집은 한 번만.
+- QuickGradingTest: 흠집 0개면 A, 긁힘 2개 B, 찍힘 C, 탐지 전·완료 전에는 등급 없음, L1·L2·L3 같은 자리 흠집은 한 번만.
