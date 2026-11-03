@@ -1,6 +1,7 @@
 package com.gakdo.trace.capture.inspection.api;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -51,9 +52,10 @@ public class InspectionController {
                 .map(d -> new Detection(new PhotoRef(d.face(), d.light(), d.camera()), d.defectClass(), d.polygon(),
                         d.confidence()))
                 .toList();
-        List<PhotoRef> analyzed = request.analyzedPhotos() == null ? null : request.analyzedPhotos().stream()
-                .map(a -> new PhotoRef(a.face(), a.light(), a.camera()))
-                .toList();
+        // analyzedPhotos는 선택 필드라 빠지면 null 그대로 넘긴다(빠른 검사면 서비스가 400으로 막는다)
+        List<PhotoRef> analyzed = Optional.ofNullable(request.analyzedPhotos())
+                .map(items -> items.stream().map(a -> new PhotoRef(a.face(), a.light(), a.camera())).toList())
+                .orElse(null);
         int accepted = detections.save(Caller.from(jwt), setId, request.modelVersion(), list, analyzed);
         return ResponseEntity.status(HttpStatus.CREATED).body(new DetectionBatchResponse(accepted));
     }
