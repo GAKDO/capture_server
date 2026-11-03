@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.gakdo.trace.capture.captureset.application.PhotoStorage;
 import com.gakdo.trace.capture.captureset.application.PhotoStorage.ViewUrl;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
+import com.gakdo.trace.capture.captureset.domain.Photo;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.common.infra.Caller;
 import com.gakdo.trace.capture.common.infra.Times;
@@ -41,7 +42,12 @@ public class MediaService {
         this.ttl = ttl;
     }
 
-    public record MediaView(String checkpointId, OffsetDateTime expiresAt, List<Texture> textures, List<Crop> crops) {
+    public record MediaView(String checkpointId, OffsetDateTime expiresAt, List<Texture> textures, List<Crop> crops,
+            List<PhotoView> photos) {
+    }
+
+    /** 원본 사진 보기 URL(계약 선택 필드 photos, 11/3). 빠른 검사 세트는 텍스처가 없어 관리자 화면이 이 사진 위에 흠집을 겹친다. */
+    public record PhotoView(String face, String light, String camera, String url) {
     }
 
     public record Texture(String face, String url) {
@@ -62,6 +68,17 @@ public class MediaService {
                 expiresAt = url.expiresAt();
             }
         }
-        return new MediaView(checkpointId, expiresAt, list, List.of());
+        List<PhotoView> photos = new ArrayList<>();
+        for (Photo p : set.getPhotos()) {
+            if (!p.isUploaded()) {
+                continue;
+            }
+            ViewUrl url = storage.presignCaptureGet(p.getObjectKey(), ttl);
+            photos.add(new PhotoView(p.getFace().name(), p.getLight().name(), p.getCamera().name(), url.url()));
+            if (url.expiresAt() != null && url.expiresAt().isBefore(expiresAt)) {
+                expiresAt = url.expiresAt();
+            }
+        }
+        return new MediaView(checkpointId, expiresAt, list, List.of(), photos);
     }
 }

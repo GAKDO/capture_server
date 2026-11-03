@@ -14,7 +14,21 @@ public final class FaceRules {
     private static final Set<Face> PHONE_REQUIRED = EnumSet.of(Face.TOP, Face.BOT, Face.SF, Face.SB, Face.SL, Face.SR,
             Face.SCR0);
 
+    /** codes.yaml capture.face_required_quick.BOOTH: 부스 빠른 검사 위·아래 2면 (11/3 MVP). */
+    private static final Set<Face> BOOTH_QUICK_REQUIRED = EnumSet.of(Face.TOP, Face.BOT);
+
     private FaceRules() {
+    }
+
+    /** 세트 범위까지 본 필수 면. QUICK은 부스만 있다(폰 QUICK은 세트 생성에서 400). */
+    public static Set<Face> required(CaptureSource source, CaptureProfile profile) {
+        if (profile == CaptureProfile.QUICK) {
+            if (source != CaptureSource.BOOTH) {
+                throw new IllegalArgumentException("QUICK 세트는 부스만: " + source);
+            }
+            return BOOTH_QUICK_REQUIRED;
+        }
+        return required(source);
     }
 
     /** 세트 완료에 꼭 있어야 하는 면. */

@@ -82,6 +82,14 @@ public class S3PhotoStorage implements PhotoStorage {
     }
 
     @Override
+    public ViewUrl presignCaptureGet(String objectKey, Duration ttl) {
+        PresignedGetObjectRequest signed = presigner.presignGetObject(r -> r.signatureDuration(ttl)
+                .getObjectRequest(g -> g.bucket(bucket).key(objectKey)));
+        return new ViewUrl(publicUrl(signed.url().toString(), publicBase),
+                Times.utc(signed.expiration().atOffset(ZoneOffset.UTC)));
+    }
+
+    @Override
     public Optional<String> sha256Of(String objectKey) {
         Optional<HeadObjectResponse> head = head(objectKey);
         if (head.isEmpty()) {

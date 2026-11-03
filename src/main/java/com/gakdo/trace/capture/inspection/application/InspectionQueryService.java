@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,8 +46,14 @@ public class InspectionQueryService {
             List<DefectView> defects) {
     }
 
+    /**
+     * coordinateSpace·camera·light는 계약의 선택 필드(11/3)라 빠른 검사(PHOTO 좌표)일 때만 싣는다.
+     */
     public record DefectView(String defectId, String face, @JsonProperty("class") String defectClass, List<List<Double>> polygon,
-            Double lengthMm, Double areaMm2, double confidence, String modelVersion, String source, MatchView match) {
+            Double lengthMm, Double areaMm2, double confidence, String modelVersion, String source, MatchView match,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String coordinateSpace,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String camera,
+            @JsonInclude(JsonInclude.Include.NON_NULL) String light) {
     }
 
     public record MatchView(String status, String prevDefectId, Double distanceMm) {
@@ -78,15 +85,23 @@ public class InspectionQueryService {
 
         Map<Long, DefectMatchRecord> byDefect = new HashMap<>();
         matches.findBySet(set).forEach(m -> byDefect.put(m.getDefect().getId(), m));
+        boolean quick = set.isQuick();
         List<DefectView> list = defects.findBySet(set).stream()
-                .filter(d -> d.getPolygon() != null)
+                .filter(d -> quick || d.getPolygon() != null)
                 .map(d -> {
+                    if (quick) {
+                        // 빠른 검사는 정합이 없어 원본 사진 px로 보여 주고, 어느 사진인지 카메라·조명으로 알린다
+                        return new DefectView(d.getPublicId(), d.getPhoto().getFace().name(), d.getDefectClass().code(),
+                                d.getPhotoPolygon(), null, null, d.getConfidence(), d.getModelVersion(),
+                                d.getSource().name(), null, "PHOTO", d.getPhoto().getCamera().name(),
+                                d.getPhoto().getLight().name());
+                    }
                     DefectMatchRecord m = byDefect.get(d.getId());
                     MatchView match = m == null ? null : new MatchView(m.getStatus().name(),
                             m.getPrevDefect() == null ? null : m.getPrevDefect().getPublicId(), m.getDistanceMm());
                     return new DefectView(d.getPublicId(), d.getPhoto().getFace().name(), d.getDefectClass().code(),
                             d.getPolygon(), d.getLengthMm(), d.getAreaMm2(), d.getConfidence(), d.getModelVersion(),
-                            d.getSource().name(), match);
+                            d.getSource().name(), match, null, null, null);
                 })
                 .toList();
         return grade.map(g -> new InspectionView(checkpointId, g.getGrade().name(), g.getRuleVersion(),

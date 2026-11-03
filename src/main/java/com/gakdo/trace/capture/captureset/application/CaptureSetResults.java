@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.gakdo.trace.capture.captureset.domain.Camera;
+import com.gakdo.trace.capture.captureset.domain.CaptureProfile;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
 import com.gakdo.trace.capture.captureset.domain.Face;
@@ -34,15 +35,16 @@ public final class CaptureSetResults {
             boolean qualityOk) {
     }
 
-    public record CaptureSetView(String captureSetId, String checkpointId, CaptureSource source, String boothId,
-            SetStatus status, Quality quality, List<CaptureSetPhotoView> photos) {
+    public record CaptureSetView(String captureSetId, String checkpointId, CaptureSource source,
+            CaptureProfile profile, String boothId, SetStatus status, Quality quality, List<CaptureSetPhotoView> photos) {
 
         static CaptureSetView of(CaptureSet set, java.util.function.Predicate<Photo> uploaded) {
             List<CaptureSetPhotoView> photos = set.getPhotos().stream()
                     .map(p -> new CaptureSetPhotoView(p.getFace(), p.getLight(), p.getCamera(), p.getSha256(),
                             uploaded.test(p), p.isQualityOk()))
                     .toList();
-            return new CaptureSetView(set.getPublicId(), set.getCheckpointId(), set.getSource(), set.getBoothId(),
+            return new CaptureSetView(set.getPublicId(), set.getCheckpointId(), set.getSource(), set.getProfile(),
+                    set.getBoothId(),
                     set.getStatus(), set.getQuality(), photos);
         }
     }
