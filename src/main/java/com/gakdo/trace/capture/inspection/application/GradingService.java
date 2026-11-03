@@ -144,7 +144,8 @@ public class GradingService {
         CheckpointKind kind = CheckpointKind.infer(set.getSource(), previous.isPresent());
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
-                outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds)));
+                outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds),
+                previous.isPresent()));
         log.info("등급 set={} checkpoint={} type={} grade={} 신규={} 판정불가={} 비교={}", set.getPublicId(),
                 set.getCheckpointId(), kind, outcome.grade(), newIds.size(), unjudgeableFaces,
                 previous.map(GradeResult::getCheckpointId).orElse("없음(기준선)"));

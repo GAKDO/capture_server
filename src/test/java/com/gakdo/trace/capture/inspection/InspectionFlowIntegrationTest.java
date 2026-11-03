@@ -145,6 +145,7 @@ class InspectionFlowIntegrationTest {
         JsonNode outEvent = receive(graded.getName());
         assertThat(outEvent.get("checkpointType").asText()).isEqualTo("OUT");
         assertThat(outEvent.get("newDefectIds")).isEmpty();
+        assertThat(outEvent.get("compared").asBoolean()).isFalse(); // 출고는 비교 대상이 없다
         assertThat(texts(outEvent.get("unjudgeableFaces"))).containsExactly("SF");
         assertThat(outEvent.get("photos")).hasSize(BOOTH_FACES.size() * 2);
         // 같은 긁힘을 CAM1·CAM2가 같이 봤으므로 둘 중 어느 쪽과 짝지어도 맞다
@@ -194,7 +195,8 @@ class InspectionFlowIntegrationTest {
         assertThat(texts(retEvent.get("newDefectIds")))
                 .containsExactly(retResult.get("defects").get(1).get("defectId").asText());
         // 1.1 핀: 묶음마다 하나, 신규 핀의 defectId는 newDefectIds와 같다
-        assertThat(retEvent.get("schemaVersion").asText()).isEqualTo("1.1");
+        assertThat(retEvent.get("schemaVersion").asText()).isEqualTo("1.2");
+        assertThat(retEvent.get("compared").asBoolean()).isTrue();
         assertThat(retEvent.get("pins")).hasSize(2);
         List<String> newPins = new ArrayList<>();
         retEvent.get("pins").forEach(pin -> {
