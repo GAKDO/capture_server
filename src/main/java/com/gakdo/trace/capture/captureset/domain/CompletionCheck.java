@@ -17,6 +17,9 @@ import com.gakdo.trace.capture.common.domain.ErrorCode;
  */
 public final class CompletionCheck {
 
+    /** 빠른 검사 필수 면마다 있어야 하는 카메라(contracts capture-server.yaml 세트 완료). */
+    private static final Set<Camera> QUICK_CAMERAS = EnumSet.of(Camera.CAM1, Camera.CAM2);
+
     private CompletionCheck() {
     }
 
@@ -34,9 +37,14 @@ public final class CompletionCheck {
 
     /** 저장소를 보기 전에 할 수 있는 검사: 필수 면은 건너뛸 수 없다(400). */
     public static void checkSkippable(CaptureSource source, Map<Face, String> skipped) {
+        checkSkippable(source, CaptureProfile.FULL, skipped);
+    }
+
+    /** 세트 범위(QUICK이면 위·아래 2면)까지 본 건너뛰기 검사. */
+    public static void checkSkippable(CaptureSource source, CaptureProfile profile, Map<Face, String> skipped) {
         List<FieldError> errors = new ArrayList<>();
         for (Face face : skipped.keySet()) {
-            if (FaceRules.required(source).contains(face)) {
+            if (FaceRules.required(source, profile).contains(face)) {
                 errors.add(new FieldError("skippedFaces." + face,
                         sourceName(source) + " 촬영에서 " + face + "는 필수 면입니다"));
             }
@@ -51,6 +59,12 @@ public final class CompletionCheck {
      * 필수 면은 그 면으로 알린 사진이 모두 올라가야 있는 것으로 본다(부스의 조명·카메라 조합이 하나라도 없으면 검사가 불완전).
      */
     public static void check(CaptureSource source, List<PhotoState> photos, Map<Face, String> skipped) {
+        check(source, CaptureProfile.FULL, photos, skipped);
+    }
+
+    /** 세트 범위까지 본 완료 검사. QUICK은 codes.yaml capture.face_required_quick로 빠진 면을 센다. */
+    public static void check(CaptureSource source, CaptureProfile profile, List<PhotoState> photos,
+            Map<Face, String> skipped) {
         List<String> mismatched = photos.stream()
                 .filter(p -> p.present() && !p.hashMatches())
                 .map(p -> p.face() + "-" + p.light() + "-" + p.camera())
@@ -66,9 +80,19 @@ public final class CompletionCheck {
         }
 
         Set<Face> missing = EnumSet.noneOf(Face.class);
-        for (Face face : FaceRules.required(source)) {
+        for (Face face : FaceRules.required(source, profile)) {
             if (!complete.getOrDefault(face, false)) {
                 missing.add(face);
+            }
+        }
+        if (profile == CaptureProfile.QUICK) {
+            // 두 카메라가 면의 앞·뒤 반을 나눠 찍으므로, 한 카메라만 올라온 면은 반만 검사한 것이라 빠진 면으로 본다
+            for (Face face : FaceRules.required(source, profile)) {
+                Set<Camera> cams = EnumSet.noneOf(Camera.class);
+                photos.stream().filter(p -> p.face() == face && p.present()).forEach(p -> cams.add(p.camera()));
+                if (!cams.containsAll(QUICK_CAMERAS)) {
+                    missing.add(face);
+                }
             }
         }
         if (!missing.isEmpty()) {

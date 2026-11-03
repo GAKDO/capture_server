@@ -1,6 +1,7 @@
 package com.gakdo.trace.capture.inspection.application;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gakdo.trace.capture.captureset.domain.CaptureProfile;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
 import com.gakdo.trace.capture.captureset.domain.Face;
@@ -80,6 +82,9 @@ public class GradingService {
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean gradeIfReady(CaptureSet set) {
+        if (set.isQuick()) {
+            return gradeQuickIfReady(set);
+        }
         if (set.getStatus() != SetStatus.INSPECTED) {
             return false;
         }
@@ -100,8 +105,10 @@ public class GradingService {
         }
 
         List<Defect> current = usable(defects.findBySet(set), judgeable);
-        Optional<GradeResult> previous = grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(
-                set.getRentalId(), set.getCheckpointId());
+        // 빠른 검사 결과는 표준 좌표 흠집이 없어 비교할 수 없으므로 전체 세트 결과만 앞 시점으로 쓴다.
+        Optional<GradeResult> previous = grades
+                .findFirstByCaptureSetRentalIdAndCaptureSetProfileAndCheckpointIdNotOrderByUpdatedAtDesc(
+                        set.getRentalId(), CaptureProfile.FULL, set.getCheckpointId());
         Map<String, Defect> prevById = new HashMap<>();
         ViewSnapshot prevSnapshot = previous.map(p -> snapshotOf(p, prevById)).orElse(null);
 
@@ -137,11 +144,80 @@ public class GradingService {
         CheckpointKind kind = CheckpointKind.infer(set.getSource(), previous.isPresent());
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
-                outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds)));
+                outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds),
+                previous.isPresent()));
         log.info("등급 set={} checkpoint={} type={} grade={} 신규={} 판정불가={} 비교={}", set.getPublicId(),
                 set.getCheckpointId(), kind, outcome.grade(), newIds.size(), unjudgeableFaces,
                 previous.map(GradeResult::getCheckpointId).orElse("없음(기준선)"));
         return true;
+    }
+
+    /**
+     * 빠른 검사(QUICK, 11/3 MVP): 완료(UPLOADED)와 부스 탐지가 둘 다 있으면 정합 없이 등급을 매긴다.
+     * 흠집은 원본 사진 px라 거리로 묶지 않고 하나씩 세며(길이 모름), 앞 시점과 비교하지 않는다. 판정 불가 면은 올라가지 않았거나
+     * 건너뛴 면이다. 핀은 표준 좌표가 없어 싣지 않는다.
+     */
+    boolean gradeQuickIfReady(CaptureSet set) {
+        if (set.getStatus() != SetStatus.UPLOADED) {
+            return false;
+        }
+        if (set.getDetectionsReceivedAt() == null) {
+            log.info("빠른 검사: 부스 탐지를 기다립니다 set={}", set.getPublicId());
+            return false;
+        }
+        Set<Face> uploaded = EnumSet.noneOf(Face.class);
+        set.getPhotos().stream().filter(Photo::isUploaded).forEach(p -> uploaded.add(p.getFace()));
+        Map<Face, String> unjudgeable = new EnumMap<>(Face.class);
+        set.getSkippedFaces().forEach((face, reason) -> unjudgeable.put(face, "건너뜀: " + reason));
+        uploaded.removeAll(unjudgeable.keySet());
+        if (uploaded.isEmpty()) {
+            set.markUnjudgeable();
+            log.warn("빠른 검사: 판정할 면이 없습니다 set={}", set.getPublicId());
+            return false;
+        }
+
+        List<DefectGroups.Group> groups = quickGroups(defects.findBySet(set), uploaded);
+        boolean baseline = grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(
+                set.getRentalId(), set.getCheckpointId()).isEmpty();
+        GradeRules.Outcome outcome = GradeRules.evaluate(groups, unjudgeable, baseline);
+        List<String> reasons = new ArrayList<>(outcome.reasons());
+        reasons.add("빠른 검사(위·아래 " + uploaded.size() + "면, 정합·시점 비교 없음)");
+
+        GradeResult result = grades.findByCheckpointId(set.getCheckpointId())
+                .orElseGet(() -> new GradeResult(set.getCheckpointId()));
+        List<Face> unjudgeableFaces = List.copyOf(unjudgeable.keySet());
+        result.record(set, outcome.grade(), outcome.ruleVersion(), List.copyOf(reasons), unjudgeableFaces);
+        grades.save(result);
+        set.markGradedQuick();
+
+        CheckpointKind kind = CheckpointKind.infer(set.getSource(), !baseline);
+        events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
+                Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
+                outcome.ruleVersion(), List.of(), unjudgeableFaces, photoHashes(set), List.of(), false));
+        log.info("빠른 검사 등급 set={} checkpoint={} grade={} 흠집={} 판정불가={}", set.getPublicId(),
+                set.getCheckpointId(), outcome.grade(), groups.size(), unjudgeableFaces);
+        return true;
+    }
+
+    /**
+     * 빠른 검사 흠집 묶기: 같은 면·같은 카메라 사진끼리만 원본 px로 묶는다. 부스 카메라는 고정이라 조명(L1·L2·L3)만 다른 사진은
+     * 좌표가 같아, 두 조명에 함께 잡힌 같은 흠집을 한 번만 센다. 다른 카메라 사진은 좌표계가 달라 합치지 않는다.
+     * 묶는 거리는 비교 규칙과 같은 20 px(표준 좌표 5 mm 자리)를 원본 px에 그대로 쓴다. 길이는 몰라 null, 비교 없음.
+     */
+    static List<DefectGroups.Group> quickGroups(List<Defect> all, Set<Face> judgeable) {
+        Map<String, List<DefectGroups.Item>> byPhotoFrame = new java.util.LinkedHashMap<>();
+        for (Defect d : all) {
+            Face face = d.getPhoto().getFace();
+            if (!judgeable.contains(face) || d.getPhotoPolygon() == null || d.getPhotoPolygon().size() < 3) {
+                continue;
+            }
+            byPhotoFrame.computeIfAbsent(face + "-" + d.getPhoto().getCamera(), k -> new ArrayList<>())
+                    .add(new DefectGroups.Item(DefectObservation.fromStandardPx(d.getPublicId(), face,
+                            d.getDefectClass(), d.getPhotoPolygon()), null, null));
+        }
+        List<DefectGroups.Group> groups = new ArrayList<>();
+        byPhotoFrame.values().forEach(items -> groups.addAll(DefectGroups.group(items, RULE)));
+        return groups;
     }
 
     private static List<PhotoState> states(CaptureSet set, Set<Long> aligned) {

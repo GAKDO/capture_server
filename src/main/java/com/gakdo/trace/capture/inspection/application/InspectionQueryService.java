@@ -4,13 +4,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
+import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.common.domain.DomainException;
 import com.gakdo.trace.capture.common.domain.ErrorCode;
@@ -41,12 +44,21 @@ public class InspectionQueryService {
         this.grades = grades;
     }
 
+    /** photoDefects는 계약의 선택 필드(11/3)라 빠른 검사 세트일 때만 싣는다(그때 defects는 빈 배열). */
     public record InspectionView(String checkpointId, String grade, String ruleVersion, List<String> reasons,
-            List<DefectView> defects) {
+            List<DefectView> defects,
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<PhotoDefectView> photoDefects) {
     }
 
+    /** polygon은 늘 표준 좌표 px. */
     public record DefectView(String defectId, String face, @JsonProperty("class") String defectClass, List<List<Double>> polygon,
             Double lengthMm, Double areaMm2, double confidence, String modelVersion, String source, MatchView match) {
+    }
+
+    /** 빠른 검사 흠집: 원본 사진 px. 어느 사진인지는 face·light·camera로 찾는다(민서 11/3 결정: 별도 칸). */
+    public record PhotoDefectView(String defectId, String face, String light, String camera,
+            @JsonProperty("class") String defectClass, List<List<Double>> polygon, double confidence,
+            String modelVersion) {
     }
 
     public record MatchView(String status, String prevDefectId, Double distanceMm) {
@@ -78,6 +90,17 @@ public class InspectionQueryService {
 
         Map<Long, DefectMatchRecord> byDefect = new HashMap<>();
         matches.findBySet(set).forEach(m -> byDefect.put(m.getDefect().getId(), m));
+        if (set.isQuick()) {
+            // 미디어 조회(/media)와 같은 공개 범위: 완료 때 올라간 사진만, 건너뛴 면은 뺀다(등급 계산과 같음).
+            Set<Face> skipped = set.getSkippedFaces().keySet();
+            List<PhotoDefectView> photo = defects.findBySet(set).stream()
+                    .filter(d -> d.getPhoto().isUploaded() && !skipped.contains(d.getPhoto().getFace()))
+                    .map(d -> new PhotoDefectView(d.getPublicId(), d.getPhoto().getFace().name(),
+                            d.getPhoto().getLight().name(), d.getPhoto().getCamera().name(), d.getDefectClass().code(),
+                            d.getPhotoPolygon(), d.getConfidence(), d.getModelVersion()))
+                    .toList();
+            return view(checkpointId, grade, List.of(), photo);
+        }
         List<DefectView> list = defects.findBySet(set).stream()
                 .filter(d -> d.getPolygon() != null)
                 .map(d -> {
@@ -89,8 +112,13 @@ public class InspectionQueryService {
                             d.getSource().name(), match);
                 })
                 .toList();
+        return view(checkpointId, grade, list, null);
+    }
+
+    private static InspectionView view(String checkpointId, Optional<GradeResult> grade, List<DefectView> list,
+            List<PhotoDefectView> photo) {
         return grade.map(g -> new InspectionView(checkpointId, g.getGrade().name(), g.getRuleVersion(),
-                g.getReasons(), list))
-                .orElseGet(() -> new InspectionView(checkpointId, null, null, List.of(), list));
+                g.getReasons(), list, photo))
+                .orElseGet(() -> new InspectionView(checkpointId, null, null, List.of(), list, photo));
     }
 }

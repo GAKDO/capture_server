@@ -23,6 +23,9 @@ public interface PhotoStorage {
     /** 버킷 trace-derived 객체(텍스처 등)의 사전 서명 GET URL. 3D 리포트가 직접 내려받는다(CA2 /media). */
     ViewUrl presignDerivedGet(String objectKey, Duration ttl);
 
+    /** 버킷 trace-captures 원본 사진의 사전 서명 GET URL. 빠른 검사 결과 화면이 사진을 직접 내려받는다(11/3 MVP, /media photos). */
+    ViewUrl presignCaptureGet(String objectKey, Duration ttl);
+
     record ViewUrl(String url, OffsetDateTime expiresAt) {
     }
 

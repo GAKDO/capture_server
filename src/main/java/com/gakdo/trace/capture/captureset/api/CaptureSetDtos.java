@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.gakdo.trace.capture.captureset.domain.Camera;
+import com.gakdo.trace.capture.captureset.domain.CaptureProfile;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
 import com.gakdo.trace.capture.captureset.domain.DeviceModel;
 import com.gakdo.trace.capture.captureset.domain.Face;
@@ -41,7 +42,8 @@ public final class CaptureSetDtos {
             @NotNull @Pattern(regexp = PublicIds.PATTERN, message = "NanoID 21자여야 합니다") String checkpointId,
             @NotNull CaptureSource source,
             @NotNull @Size(min = 1, max = 54) List<@Valid @NotNull PhotoSpecRequest> photos,
-            @Valid CaptureDeviceRequest device) {
+            @Valid CaptureDeviceRequest device,
+            CaptureProfile profile) {
     }
 
     /** contracts CaptureDevice. 클라이언트가 rental-server 기종 정보를 그대로 옮긴다. */

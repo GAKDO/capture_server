@@ -2,8 +2,10 @@ package com.gakdo.trace.capture.inspection.application;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 import com.gakdo.trace.capture.captureset.application.CaptureSetService.PhotoRef;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
+import com.gakdo.trace.capture.captureset.domain.Face;
+import com.gakdo.trace.capture.captureset.domain.FaceRules;
 import com.gakdo.trace.capture.captureset.domain.Photo;
 import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
@@ -58,6 +62,16 @@ public class DetectionService {
     /** @return 저장한 탐지 수 */
     @Transactional
     public int save(Caller caller, String setId, String modelVersion, List<Detection> detections) {
+        return save(caller, setId, modelVersion, detections, null);
+    }
+
+    /**
+     * analyzed는 이 요청으로 분석을 마친 사진(없으면 null). 빠른 검사(QUICK) 세트는 필수이고 필수 면(TOP·BOT) 사진을 모두 담아야 한다.
+     * 일부 사진만 분석한 결과로 등급을 내고 세트를 닫지 않기 위해서다(contracts #20 리뷰).
+     */
+    @Transactional
+    public int save(Caller caller, String setId, String modelVersion, List<Detection> detections,
+            List<PhotoRef> analyzed) {
         if (!caller.isBooth()) {
             throw new DomainException(ErrorCode.FORBIDDEN, "부스 토큰만 탐지 결과를 올릴 수 있습니다.");
         }
@@ -80,6 +94,9 @@ public class DetectionService {
         if (!errors.isEmpty()) {
             throw new DomainException(ErrorCode.VALIDATION_FAILED, "세트에 없는 사진을 가리키는 탐지가 있습니다.", errors);
         }
+        if (set.isQuick()) {
+            checkAnalyzed(set, photos.keySet(), analyzed);
+        }
 
         // 통째로 바꾸기: 등급 전이라 이 세트 흠집을 가리키는 다른 시점 매칭은 없다
         matches.deleteBySet(set);
@@ -99,5 +116,33 @@ public class DetectionService {
                 set.getStatus());
         grading.gradeIfReady(set);
         return saved.size();
+    }
+
+    /** 빠른 검사 탐지 요청은 필수 면의 세트 사진을 모두 분석한 결과여야 한다. 아니면 400(analyzedPhotos). */
+    static void checkAnalyzed(CaptureSet set, Set<PhotoRef> inSet, List<PhotoRef> analyzed) {
+        if (analyzed == null) {
+            throw new DomainException(ErrorCode.VALIDATION_FAILED, "빠른 검사 세트는 분석한 사진 목록이 필요합니다.",
+                    List.of(new FieldError("analyzedPhotos", "TOP·BOT 사진을 모두 분석한 뒤 목록과 함께 보내 주세요")));
+        }
+        List<FieldError> errors = new ArrayList<>();
+        for (int i = 0; i < analyzed.size(); i++) {
+            if (!inSet.contains(analyzed.get(i))) {
+                errors.add(new FieldError("analyzedPhotos[" + i + "]", "세트에 없는 사진입니다(face, light, camera)."));
+            }
+        }
+        Set<Face> required = FaceRules.required(set.getSource(), set.getProfile());
+        Set<PhotoRef> given = new HashSet<>(analyzed);
+        List<String> missing = inSet.stream()
+                .filter(p -> required.contains(p.face()) && !given.contains(p))
+                .map(p -> p.face() + "-" + p.light() + "-" + p.camera())
+                .sorted()
+                .toList();
+        if (!missing.isEmpty()) {
+            errors.add(new FieldError("analyzedPhotos", "분석하지 않은 사진: " + String.join(", ", missing)));
+        }
+        if (!errors.isEmpty()) {
+            throw new DomainException(ErrorCode.VALIDATION_FAILED, "빠른 검사는 TOP·BOT 사진을 모두 분석한 결과만 받습니다.",
+                    errors);
+        }
     }
 }

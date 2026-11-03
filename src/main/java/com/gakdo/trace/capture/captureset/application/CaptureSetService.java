@@ -16,6 +16,7 @@ import java.util.TreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +29,7 @@ import com.gakdo.trace.capture.captureset.application.CaptureSetResults.UploadRe
 import com.gakdo.trace.capture.captureset.application.CaptureSetResults.UploadTarget;
 import com.gakdo.trace.capture.captureset.application.CaptureUploadedEvent.EventPhoto;
 import com.gakdo.trace.capture.captureset.domain.Camera;
+import com.gakdo.trace.capture.captureset.domain.CaptureProfile;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet.PhotoSpec;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
@@ -59,9 +61,12 @@ public class CaptureSetService {
     private final CaptureEventPublisher events;
     private final ObjectMapper json;
     private final Duration uploadTtl;
+    private final ApplicationEventPublisher local;
 
     public CaptureSetService(CaptureSetRepository sets, PhotoStorage storage, CaptureEventPublisher events,
-            ObjectMapper json, @Value("${app.storage.upload-ttl:10m}") Duration uploadTtl) {
+            ObjectMapper json, @Value("${app.storage.upload-ttl:10m}") Duration uploadTtl,
+            ApplicationEventPublisher local) {
+        this.local = local;
         this.sets = sets;
         this.storage = storage;
         this.events = events;
@@ -80,6 +85,13 @@ public class CaptureSetService {
     @Transactional
     public CaptureSetCreateResponse create(Caller caller, String rentalId, String checkpointId, CaptureSource source,
             DeviceModel device, List<NewPhoto> photos) {
+        return create(caller, rentalId, checkpointId, source, device, null, photos);
+    }
+
+    /** profile은 세트 범위(null이면 FULL, QUICK은 부스 빠른 검사). */
+    @Transactional
+    public CaptureSetCreateResponse create(Caller caller, String rentalId, String checkpointId, CaptureSource source,
+            DeviceModel device, CaptureProfile profile, List<NewPhoto> photos) {
         caller.requireCapturer();
         String boothId = null;
         if (caller.isBooth()) {
@@ -92,7 +104,7 @@ public class CaptureSetService {
             throw Caller.outOfScope();
         }
 
-        CaptureSet set = CaptureSet.open(rentalId, checkpointId, source, boothId, device,
+        CaptureSet set = CaptureSet.open(rentalId, checkpointId, source, boothId, device, profile,
                 photos.stream().map(NewPhoto::spec).toList());
         sets.save(set);
 
@@ -100,8 +112,8 @@ public class CaptureSetService {
         for (int i = 0; i < photos.size(); i++) {
             uploads.add(uploadTarget(set.getPhotos().get(i), photos.get(i).contentType()));
         }
-        log.info("촬영 세트 생성 set={} checkpoint={} source={} photos={}", set.getPublicId(), checkpointId, source,
-                photos.size());
+        log.info("촬영 세트 생성 set={} checkpoint={} source={} profile={} photos={}", set.getPublicId(), checkpointId,
+                source, set.getProfile(), photos.size());
         return new CaptureSetCreateResponse(set.getPublicId(), uploads);
     }
 
@@ -186,7 +198,7 @@ public class CaptureSetService {
             throw new DomainException(ErrorCode.CAPTURE_SET_CLOSED, null);
         }
 
-        CompletionCheck.checkSkippable(set.getSource(), skipped);
+        CompletionCheck.checkSkippable(set.getSource(), set.getProfile(), skipped);
         List<PhotoState> states = new ArrayList<>();
         Set<String> present = new HashSet<>();
         for (Photo photo : set.getPhotos()) {
@@ -196,12 +208,16 @@ public class CaptureSetService {
                 present.add(photo.getPublicId());
             }
         }
-        CompletionCheck.check(set.getSource(), states, skipped);
+        CompletionCheck.check(set.getSource(), set.getProfile(), states, skipped);
 
         set.complete(present, skipped, idempotencyKey, requestHash);
         CaptureSetView view = CaptureSetView.of(set, Photo::isUploaded);
         set.recordCompletionResponse(json.convertValue(view, new TypeReference<Map<String, Object>>() { }));
         events.publishUploaded(event(set));
+        if (set.isQuick()) {
+            // 빠른 검사는 정합을 기다리지 않는다. 탐지가 먼저 와 있었으면 같은 트랜잭션에서 바로 등급을 매긴다(inspection이 듣는다)
+            local.publishEvent(new QuickSetCompleted(set.getPublicId()));
+        }
         log.info("촬영 세트 완료 set={} checkpoint={} uploaded={} skipped={}", set.getPublicId(),
                 set.getCheckpointId(), present.size(), skipped.keySet());
         return view;

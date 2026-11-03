@@ -58,6 +58,10 @@ public class CaptureSet {
     private String boothId;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false, length = 8)
+    private CaptureProfile profile = CaptureProfile.FULL;
+
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private SetStatus status;
 
@@ -117,7 +121,17 @@ public class CaptureSet {
     /** device는 찍은 기기의 기종·치수. 없으면 null(inspect-worker가 기본 기종으로 펼친다). */
     public static CaptureSet open(String rentalId, String checkpointId, CaptureSource source, String boothId,
             DeviceModel device, List<PhotoSpec> specs) {
+        return open(rentalId, checkpointId, source, boothId, device, CaptureProfile.FULL, specs);
+    }
+
+    /** profile은 세트 범위(null이면 FULL). QUICK은 부스만이고, 폰이면 400(profile). */
+    public static CaptureSet open(String rentalId, String checkpointId, CaptureSource source, String boothId,
+            DeviceModel device, CaptureProfile profile, List<PhotoSpec> specs) {
+        CaptureProfile range = profile == null ? CaptureProfile.FULL : profile;
         List<FieldError> errors = new ArrayList<>();
+        if (range == CaptureProfile.QUICK && source != CaptureSource.BOOTH) {
+            errors.add(new FieldError("profile", "빠른 검사(QUICK)는 부스 촬영만 쓸 수 있습니다"));
+        }
         Set<String> seen = new HashSet<>();
         for (int i = 0; i < specs.size(); i++) {
             PhotoSpec spec = specs.get(i);
@@ -142,6 +156,7 @@ public class CaptureSet {
         set.checkpointId = checkpointId;
         set.source = source;
         set.boothId = boothId;
+        set.profile = range;
         set.device = device;
         set.status = SetStatus.UPLOADING;
         set.quality = Quality.OK;
@@ -152,6 +167,14 @@ public class CaptureSet {
                     spec.takenAt()));
         }
         return set;
+    }
+
+    public CaptureProfile getProfile() {
+        return profile == null ? CaptureProfile.FULL : profile;
+    }
+
+    public boolean isQuick() {
+        return getProfile() == CaptureProfile.QUICK;
     }
 
     /** 이미 완료됐으면(다른 키든 상태든) 다시 완료할 수 없다. */
@@ -195,6 +218,16 @@ public class CaptureSet {
     /** 판정할 수 있는 면이 하나도 없다(CA2). 등급 없이 INSPECTED에 머물고 다시 찍어야 한다. */
     public void markUnjudgeable() {
         this.quality = Quality.UNJUDGEABLE;
+        this.updatedAt = Times.now();
+    }
+
+    /** 빠른 검사 세트를 정합 없이 등급 매겼다(11/3 MVP): UPLOADED → GRADED. 이후 부스 탐지는 409. */
+    public void markGradedQuick() {
+        if (profile != CaptureProfile.QUICK || status != SetStatus.UPLOADED) {
+            throw new IllegalStateException("완료된 빠른 검사 세트만 정합 없이 등급을 매긴다: " + profile + "/" + status);
+        }
+        this.status = SetStatus.GRADED;
+        this.quality = Quality.OK;
         this.updatedAt = Times.now();
     }
 
