@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 
@@ -12,6 +13,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
+import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.common.domain.DomainException;
 import com.gakdo.trace.capture.common.domain.ErrorCode;
@@ -89,7 +91,10 @@ public class InspectionQueryService {
         Map<Long, DefectMatchRecord> byDefect = new HashMap<>();
         matches.findBySet(set).forEach(m -> byDefect.put(m.getDefect().getId(), m));
         if (set.isQuick()) {
+            // 미디어 조회(/media)와 같은 공개 범위: 완료 때 올라간 사진만, 건너뛴 면은 뺀다(등급 계산과 같음).
+            Set<Face> skipped = set.getSkippedFaces().keySet();
             List<PhotoDefectView> photo = defects.findBySet(set).stream()
+                    .filter(d -> d.getPhoto().isUploaded() && !skipped.contains(d.getPhoto().getFace()))
                     .map(d -> new PhotoDefectView(d.getPublicId(), d.getPhoto().getFace().name(),
                             d.getPhoto().getLight().name(), d.getPhoto().getCamera().name(), d.getDefectClass().code(),
                             d.getPhotoPolygon(), d.getConfidence(), d.getModelVersion()))

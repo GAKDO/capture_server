@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gakdo.trace.capture.captureset.domain.CaptureProfile;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
 import com.gakdo.trace.capture.captureset.domain.Face;
@@ -104,8 +105,10 @@ public class GradingService {
         }
 
         List<Defect> current = usable(defects.findBySet(set), judgeable);
-        Optional<GradeResult> previous = grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(
-                set.getRentalId(), set.getCheckpointId());
+        // 빠른 검사 결과는 표준 좌표 흠집이 없어 비교할 수 없으므로 전체 세트 결과만 앞 시점으로 쓴다.
+        Optional<GradeResult> previous = grades
+                .findFirstByCaptureSetRentalIdAndCaptureSetProfileAndCheckpointIdNotOrderByUpdatedAtDesc(
+                        set.getRentalId(), CaptureProfile.FULL, set.getCheckpointId());
         Map<String, Defect> prevById = new HashMap<>();
         ViewSnapshot prevSnapshot = previous.map(p -> snapshotOf(p, prevById)).orElse(null);
 
