@@ -23,7 +23,12 @@ public final class InspectionDtos {
 
     public record DetectionBatchRequest(
             @NotBlank @Size(max = 64) String modelVersion,
-            @NotNull @Valid List<@NotNull @Valid DetectionItem> detections) {
+            @NotNull @Valid List<@NotNull @Valid DetectionItem> detections,
+            @Size(max = 80) @Valid List<@NotNull @Valid PhotoRefItem> analyzedPhotos) {
+    }
+
+    /** 분석을 마친 사진 하나(11/3 추가). 빠른 검사 세트는 TOP·BOT 사진 전부를 담아야 한다. */
+    public record PhotoRefItem(@NotNull Face face, @NotNull Light light, @NotNull Camera camera) {
     }
 
     /** polygon은 그 사진의 원본 px [[x, y], …](꼭짓점 3개 이상). */

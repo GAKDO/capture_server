@@ -51,7 +51,10 @@ public class InspectionController {
                 .map(d -> new Detection(new PhotoRef(d.face(), d.light(), d.camera()), d.defectClass(), d.polygon(),
                         d.confidence()))
                 .toList();
-        int accepted = detections.save(Caller.from(jwt), setId, request.modelVersion(), list);
+        List<PhotoRef> analyzed = request.analyzedPhotos() == null ? null : request.analyzedPhotos().stream()
+                .map(a -> new PhotoRef(a.face(), a.light(), a.camera()))
+                .toList();
+        int accepted = detections.save(Caller.from(jwt), setId, request.modelVersion(), list, analyzed);
         return ResponseEntity.status(HttpStatus.CREATED).body(new DetectionBatchResponse(accepted));
     }
 

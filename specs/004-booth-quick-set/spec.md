@@ -22,3 +22,5 @@
 
 - 빠른 검사 필수 면(TOP·BOT)은 CAM1·CAM2 사진이 모두 올라와야 완료된다. 한 카메라만 있으면 409 CAPTURE_FACES_MISSING(QuickSetDomainTest).
 - 빠른 검사 등급 이벤트는 `compared: false`(앞 시점과 비교하지 않음). 정합 세트는 `compared: true`.
+- 빠른 검사 흠집은 검사 결과의 `photoDefects`(원본 사진 px, 면·조명·카메라)로만 돌려주고 `defects`는 빈 배열이다. `defects[].polygon`은 늘 표준 좌표(민서 11/3 결정).
+- 빠른 검사 탐지 요청은 `analyzedPhotos`로 TOP·BOT 사진 전부를 분석했다고 알려야 한다. 없거나 빠지면 400(QuickDetectionTest).

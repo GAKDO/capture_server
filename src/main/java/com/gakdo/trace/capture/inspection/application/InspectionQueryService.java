@@ -42,18 +42,21 @@ public class InspectionQueryService {
         this.grades = grades;
     }
 
+    /** photoDefects는 계약의 선택 필드(11/3)라 빠른 검사 세트일 때만 싣는다(그때 defects는 빈 배열). */
     public record InspectionView(String checkpointId, String grade, String ruleVersion, List<String> reasons,
-            List<DefectView> defects) {
+            List<DefectView> defects,
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<PhotoDefectView> photoDefects) {
     }
 
-    /**
-     * coordinateSpace·camera·light는 계약의 선택 필드(11/3)라 빠른 검사(PHOTO 좌표)일 때만 싣는다.
-     */
+    /** polygon은 늘 표준 좌표 px. */
     public record DefectView(String defectId, String face, @JsonProperty("class") String defectClass, List<List<Double>> polygon,
-            Double lengthMm, Double areaMm2, double confidence, String modelVersion, String source, MatchView match,
-            @JsonInclude(JsonInclude.Include.NON_NULL) String coordinateSpace,
-            @JsonInclude(JsonInclude.Include.NON_NULL) String camera,
-            @JsonInclude(JsonInclude.Include.NON_NULL) String light) {
+            Double lengthMm, Double areaMm2, double confidence, String modelVersion, String source, MatchView match) {
+    }
+
+    /** 빠른 검사 흠집: 원본 사진 px. 어느 사진인지는 face·light·camera로 찾는다(민서 11/3 결정: 별도 칸). */
+    public record PhotoDefectView(String defectId, String face, String light, String camera,
+            @JsonProperty("class") String defectClass, List<List<Double>> polygon, double confidence,
+            String modelVersion) {
     }
 
     public record MatchView(String status, String prevDefectId, Double distanceMm) {
@@ -85,27 +88,32 @@ public class InspectionQueryService {
 
         Map<Long, DefectMatchRecord> byDefect = new HashMap<>();
         matches.findBySet(set).forEach(m -> byDefect.put(m.getDefect().getId(), m));
-        boolean quick = set.isQuick();
+        if (set.isQuick()) {
+            List<PhotoDefectView> photo = defects.findBySet(set).stream()
+                    .map(d -> new PhotoDefectView(d.getPublicId(), d.getPhoto().getFace().name(),
+                            d.getPhoto().getLight().name(), d.getPhoto().getCamera().name(), d.getDefectClass().code(),
+                            d.getPhotoPolygon(), d.getConfidence(), d.getModelVersion()))
+                    .toList();
+            return view(checkpointId, grade, List.of(), photo);
+        }
         List<DefectView> list = defects.findBySet(set).stream()
-                .filter(d -> quick || d.getPolygon() != null)
+                .filter(d -> d.getPolygon() != null)
                 .map(d -> {
-                    if (quick) {
-                        // 빠른 검사는 정합이 없어 원본 사진 px로 보여 주고, 어느 사진인지 카메라·조명으로 알린다
-                        return new DefectView(d.getPublicId(), d.getPhoto().getFace().name(), d.getDefectClass().code(),
-                                d.getPhotoPolygon(), null, null, d.getConfidence(), d.getModelVersion(),
-                                d.getSource().name(), null, "PHOTO", d.getPhoto().getCamera().name(),
-                                d.getPhoto().getLight().name());
-                    }
                     DefectMatchRecord m = byDefect.get(d.getId());
                     MatchView match = m == null ? null : new MatchView(m.getStatus().name(),
                             m.getPrevDefect() == null ? null : m.getPrevDefect().getPublicId(), m.getDistanceMm());
                     return new DefectView(d.getPublicId(), d.getPhoto().getFace().name(), d.getDefectClass().code(),
                             d.getPolygon(), d.getLengthMm(), d.getAreaMm2(), d.getConfidence(), d.getModelVersion(),
-                            d.getSource().name(), match, null, null, null);
+                            d.getSource().name(), match);
                 })
                 .toList();
+        return view(checkpointId, grade, list, null);
+    }
+
+    private static InspectionView view(String checkpointId, Optional<GradeResult> grade, List<DefectView> list,
+            List<PhotoDefectView> photo) {
         return grade.map(g -> new InspectionView(checkpointId, g.getGrade().name(), g.getRuleVersion(),
-                g.getReasons(), list))
-                .orElseGet(() -> new InspectionView(checkpointId, null, null, List.of(), list));
+                g.getReasons(), list, photo))
+                .orElseGet(() -> new InspectionView(checkpointId, null, null, List.of(), list, photo));
     }
 }
