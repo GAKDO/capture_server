@@ -22,6 +22,7 @@ import com.gakdo.trace.capture.captureset.domain.CompletionCheck.PhotoState;
 import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.captureset.domain.FaceRules;
 import com.gakdo.trace.capture.captureset.domain.Light;
+import com.gakdo.trace.capture.captureset.domain.Photo;
 import com.gakdo.trace.capture.captureset.domain.Quality;
 import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.common.domain.DomainException;
@@ -74,7 +75,7 @@ class CaptureDomainTest {
     void boothTwoCameras() {
         CaptureSet set = CaptureSet.open("r", "c", CaptureSource.BOOTH, "b",
                 List.of(spec(Face.TOP, Light.L2, Camera.CAM1), spec(Face.TOP, Light.L2, Camera.CAM2)));
-        assertThat(set.getPhotos()).extracting(p -> p.getObjectKey()).doesNotHaveDuplicates()
+        assertThat(set.getPhotos()).extracting(Photo::getObjectKey).doesNotHaveDuplicates()
                 .allMatch(k -> k.startsWith("captures/" + set.getPublicId() + "/TOP-L2-"));
         assertThat(set.getStatus()).isEqualTo(SetStatus.UPLOADING);
     }
@@ -87,7 +88,7 @@ class CaptureDomainTest {
         assertThatThrownBy(() -> CompletionCheck.check(CaptureSource.BOOTH, photos, Map.of()))
                 .isInstanceOfSatisfying(DomainException.class, e -> {
                     assertThat(e.code()).isEqualTo(ErrorCode.CAPTURE_FACES_MISSING);
-                    assertThat(e.properties().get("missingFaces")).isEqualTo(List.of(Face.TOP, Face.KB));
+                    assertThat(e.properties()).containsEntry("missingFaces", List.of(Face.TOP, Face.KB));
                 });
     }
 
@@ -98,7 +99,7 @@ class CaptureDomainTest {
         photos.add(new PhotoState(Face.TOP, Light.L2, Camera.CAM2, SHA, null));
         assertThatThrownBy(() -> CompletionCheck.check(CaptureSource.BOOTH, photos, Map.of()))
                 .isInstanceOfSatisfying(DomainException.class,
-                        e -> assertThat(e.properties().get("missingFaces")).isEqualTo(List.of(Face.TOP)));
+                        e -> assertThat(e.properties()).containsEntry("missingFaces", List.of(Face.TOP)));
     }
 
     @Test

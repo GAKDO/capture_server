@@ -5,6 +5,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.comparison.domain.DefectClass;
@@ -45,51 +46,70 @@ public final class GradeRules {
         for (Group g : groups) {
             byClass.computeIfAbsent(g.defectClass(), c -> new ArrayList<>()).add(g);
         }
-        int cracks = count(byClass, DefectClass.CRACK);
-        int dents = count(byClass, DefectClass.DENT);
-        List<Group> scratches = byClass.getOrDefault(DefectClass.SCRATCH, List.of());
-        double longest = scratches.stream().map(Group::lengthMm).filter(v -> v != null)
-                .max(Double::compare).orElse(0.0);
-
-        Grade grade;
-        String why;
-        if (cracks > 0 || dents >= MANY_DENTS) {
-            grade = Grade.D;
-            why = cracks > 0 ? "균열 " + cracks + "개" : "찍힘 " + dents + "개";
-        } else if (dents > 0 || scratches.size() >= MANY_SCRATCHES || longest >= LONG_SCRATCH_MM) {
-            grade = Grade.C;
-            why = dents > 0 ? "찍힘 " + dents + "개"
-                    : longest >= LONG_SCRATCH_MM ? "긴 긁힘(" + mm(longest) + ")"
-                    : "긁힘 " + scratches.size() + "개";
-        } else if (!scratches.isEmpty()) {
-            grade = Grade.B;
-            why = "긁힘 " + scratches.size() + "개(최대 " + mm(longest) + ")";
-        } else {
-            grade = Grade.A;
-            why = "흠집 없음";
-        }
+        Verdict verdict = grade(byClass);
 
         List<String> reasons = new ArrayList<>();
-        reasons.add(why + " → " + grade);
+        reasons.add(verdict.why() + " → " + verdict.grade());
         if (baseline) {
             reasons.add("출고 기준선(비교할 앞 시점 없음)");
         } else {
-            for (DefectClass c : List.of(DefectClass.CRACK, DefectClass.DENT, DefectClass.SCRATCH)) {
-                List<Group> fresh = byClass.getOrDefault(c, List.of()).stream()
-                        .filter(g -> Boolean.TRUE.equals(g.isNew())).toList();
-                if (!fresh.isEmpty()) {
-                    Double max = fresh.stream().map(Group::lengthMm).filter(v -> v != null)
-                            .max(Double::compare).orElse(null);
-                    reasons.add("신규 " + name(c) + " " + fresh.size() + "개" + (max == null ? "" : "(" + mm(max) + ")"));
-                }
-            }
+            addNewDefectReasons(byClass, reasons);
         }
         int stains = count(byClass, DefectClass.STAIN);
         if (stains > 0) {
             reasons.add("오염 " + stains + "개는 등급에서 뺌");
         }
         unjudgeable.forEach((face, reason) -> reasons.add("판정 불가 면 " + face + ": " + reason));
-        return new Outcome(grade, VERSION, List.copyOf(reasons));
+        return new Outcome(verdict.grade(), VERSION, List.copyOf(reasons));
+    }
+
+    /** 등급과 그 근거 문장 하나. */
+    private record Verdict(Grade grade, String why) {
+    }
+
+    private static Verdict grade(Map<DefectClass, List<Group>> byClass) {
+        int cracks = count(byClass, DefectClass.CRACK);
+        int dents = count(byClass, DefectClass.DENT);
+        List<Group> scratches = byClass.getOrDefault(DefectClass.SCRATCH, List.of());
+        double longest = longest(scratches);
+
+        if (cracks > 0) {
+            return new Verdict(Grade.D, "균열 " + cracks + "개");
+        }
+        if (dents >= MANY_DENTS) {
+            return new Verdict(Grade.D, "찍힘 " + dents + "개");
+        }
+        if (dents > 0) {
+            return new Verdict(Grade.C, "찍힘 " + dents + "개");
+        }
+        if (longest >= LONG_SCRATCH_MM) {
+            return new Verdict(Grade.C, "긴 긁힘(" + mm(longest) + ")");
+        }
+        if (scratches.size() >= MANY_SCRATCHES) {
+            return new Verdict(Grade.C, "긁힘 " + scratches.size() + "개");
+        }
+        if (!scratches.isEmpty()) {
+            return new Verdict(Grade.B, "긁힘 " + scratches.size() + "개(최대 " + mm(longest) + ")");
+        }
+        return new Verdict(Grade.A, "흠집 없음");
+    }
+
+    private static double longest(List<Group> scratches) {
+        return scratches.stream().map(Group::lengthMm).filter(Objects::nonNull)
+                .max(Double::compare).orElse(0.0);
+    }
+
+    /** 앞 시점과 비교했을 때 종류별 신규 흠집 개수(와 가장 긴 길이)를 근거에 더한다. */
+    private static void addNewDefectReasons(Map<DefectClass, List<Group>> byClass, List<String> reasons) {
+        for (DefectClass c : List.of(DefectClass.CRACK, DefectClass.DENT, DefectClass.SCRATCH)) {
+            List<Group> fresh = byClass.getOrDefault(c, List.of()).stream()
+                    .filter(g -> Boolean.TRUE.equals(g.isNew())).toList();
+            if (!fresh.isEmpty()) {
+                Double max = fresh.stream().map(Group::lengthMm).filter(Objects::nonNull)
+                        .max(Double::compare).orElse(null);
+                reasons.add("신규 " + name(c) + " " + fresh.size() + "개" + (max == null ? "" : "(" + mm(max) + ")"));
+            }
+        }
     }
 
     private static int count(Map<DefectClass, List<Group>> byClass, DefectClass c) {

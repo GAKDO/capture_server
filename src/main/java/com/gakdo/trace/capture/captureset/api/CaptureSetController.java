@@ -2,6 +2,7 @@ package com.gakdo.trace.capture.captureset.api;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -65,8 +66,10 @@ public class CaptureSetController {
     public UploadReissueResponse reissueUploads(@AuthenticationPrincipal Jwt jwt,
             @PathVariable @Pattern(regexp = PublicIds.PATTERN) String setId,
             @Valid @RequestBody(required = false) UploadReissueRequest request) {
-        List<PhotoRef> photos = request == null || request.photos() == null ? null
-                : request.photos().stream().map(p -> new PhotoRef(p.face(), p.light(), p.camera())).toList();
+        // 본문이나 photos가 없으면 null(아직 안 올라간 사진 전부)
+        List<PhotoRef> photos = Optional.ofNullable(request).map(UploadReissueRequest::photos)
+                .map(list -> list.stream().map(p -> new PhotoRef(p.face(), p.light(), p.camera())).toList())
+                .orElse(null);
         return service.reissueUploads(Caller.from(jwt), setId, photos);
     }
 

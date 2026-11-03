@@ -65,6 +65,14 @@ public final class CompletionCheck {
     /** 세트 범위까지 본 완료 검사. QUICK은 codes.yaml capture.face_required_quick로 빠진 면을 센다. */
     public static void check(CaptureSource source, CaptureProfile profile, List<PhotoState> photos,
             Map<Face, String> skipped) {
+        checkHashes(photos);
+        Map<Face, Boolean> complete = completeness(photos);
+        checkRequiredFaces(source, profile, photos, complete);
+        checkSkipReasons(complete, skipped);
+    }
+
+    /** 올라간 사진의 해시가 알린 값과 다르면 409. */
+    private static void checkHashes(List<PhotoState> photos) {
         List<String> mismatched = photos.stream()
                 .filter(p -> p.present() && !p.hashMatches())
                 .map(p -> p.face() + "-" + p.light() + "-" + p.camera())
@@ -73,26 +81,24 @@ public final class CompletionCheck {
             throw new DomainException(ErrorCode.CAPTURE_HASH_MISMATCH,
                     String.join(", ", mismatched) + " 사진을 다시 올려 주세요.");
         }
+    }
 
+    /** 면마다 알린 사진이 모두 올라갔는지. */
+    private static Map<Face, Boolean> completeness(List<PhotoState> photos) {
         Map<Face, Boolean> complete = new EnumMap<>(Face.class);
         for (PhotoState p : photos) {
             complete.merge(p.face(), p.present(), Boolean::logicalAnd);
         }
+        return complete;
+    }
 
+    /** 빠진 필수 면이 있으면 409. */
+    private static void checkRequiredFaces(CaptureSource source, CaptureProfile profile, List<PhotoState> photos,
+            Map<Face, Boolean> complete) {
         Set<Face> missing = EnumSet.noneOf(Face.class);
         for (Face face : FaceRules.required(source, profile)) {
-            if (!complete.getOrDefault(face, false)) {
+            if (!Boolean.TRUE.equals(complete.get(face)) || isHalfQuickFace(profile, photos, face)) {
                 missing.add(face);
-            }
-        }
-        if (profile == CaptureProfile.QUICK) {
-            // 두 카메라가 면의 앞·뒤 반을 나눠 찍으므로, 한 카메라만 올라온 면은 반만 검사한 것이라 빠진 면으로 본다
-            for (Face face : FaceRules.required(source, profile)) {
-                Set<Camera> cams = EnumSet.noneOf(Camera.class);
-                photos.stream().filter(p -> p.face() == face && p.present()).forEach(p -> cams.add(p.camera()));
-                if (!cams.containsAll(QUICK_CAMERAS)) {
-                    missing.add(face);
-                }
             }
         }
         if (!missing.isEmpty()) {
@@ -101,10 +107,25 @@ public final class CompletionCheck {
                     String.join(", ", ordered.stream().map(Face::name).toList()) + " 면을 올려 주세요.",
                     List.of(), Map.of("missingFaces", ordered));
         }
+    }
 
+    /**
+     * QUICK에서 두 카메라가 면의 앞·뒤 반을 나눠 찍으므로, 한 카메라만 올라온 면은 반만 검사한 것이라 빠진 면으로 본다.
+     */
+    private static boolean isHalfQuickFace(CaptureProfile profile, List<PhotoState> photos, Face face) {
+        if (profile != CaptureProfile.QUICK) {
+            return false;
+        }
+        Set<Camera> cams = EnumSet.noneOf(Camera.class);
+        photos.stream().filter(p -> p.face() == face && p.present()).forEach(p -> cams.add(p.camera()));
+        return !cams.containsAll(QUICK_CAMERAS);
+    }
+
+    /** 올리지 않은 선택 면에 사유가 없으면 400. */
+    private static void checkSkipReasons(Map<Face, Boolean> complete, Map<Face, String> skipped) {
         List<FieldError> unexplained = new ArrayList<>();
         complete.forEach((face, ok) -> {
-            if (!ok && !skipped.containsKey(face)) {
+            if (Boolean.FALSE.equals(ok) && !skipped.containsKey(face)) {
                 unexplained.add(new FieldError("skippedFaces." + face, "올리지 않은 선택 면은 사유를 적어 주세요"));
             }
         });

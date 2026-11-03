@@ -60,12 +60,12 @@ class InspectionDomainTest {
     @Test
     @DisplayName("3×3이 아니거나 역행렬이 없는 호모그래피는 정합 결과로 받지 않는다")
     void invalidHomographyIsRejected() {
-        assertThatThrownBy(() -> Homography.of(List.of(List.of(1.0, 0.0), List.of(0.0, 1.0))))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> Homography.of(rows(1, 2, 3, 2, 4, 6, 0, 0, 1)))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> Homography.of(rows(1, 0, 0, 0, Double.NaN, 0, 0, 0, 1)))
-                .isInstanceOf(IllegalArgumentException.class);
+        List<List<Double>> notSquare = List.of(List.of(1.0, 0.0), List.of(0.0, 1.0));
+        List<List<Double>> singular = rows(1, 2, 3, 2, 4, 6, 0, 0, 1);
+        List<List<Double>> notFinite = rows(1, 0, 0, 0, Double.NaN, 0, 0, 0, 1);
+        assertThatThrownBy(() -> Homography.of(notSquare)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Homography.of(singular)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> Homography.of(notFinite)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

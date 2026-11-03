@@ -101,13 +101,17 @@ public class Defect {
 
     /** inspect-worker 탐지(폰): 표준 좌표가 먼저 있고, 원본 px는 호모그래피 역행렬로 구한다. ID는 worker가 준 값. */
     public static Defect fromWorker(String defectId, Photo photo, DefectClass defectClass,
-            List<List<Double>> photoPolygon, List<List<Double>> polygon, Double lengthMm, Double areaMm2,
-            double confidence, String modelVersion) {
+            List<List<Double>> photoPolygon, StandardShape standard, double confidence, String modelVersion) {
         Defect d = new Defect(defectId, photo, defectClass, photoPolygon, confidence, modelVersion);
+        List<List<Double>> polygon = standard.polygon();
         d.polygon = List.copyOf(polygon);
-        d.lengthMm = toFloat(lengthMm != null ? lengthMm : PolygonMeasure.lengthMm(polygon));
-        d.areaMm2 = toFloat(areaMm2 != null ? areaMm2 : PolygonMeasure.areaMm2(polygon));
+        d.lengthMm = toFloat(standard.lengthMm() != null ? standard.lengthMm() : PolygonMeasure.lengthMm(polygon));
+        d.areaMm2 = toFloat(standard.areaMm2() != null ? standard.areaMm2() : PolygonMeasure.areaMm2(polygon));
         return d;
+    }
+
+    /** worker가 준 표준 좌표 polygon과 길이·넓이(null이면 polygon으로 잰다). */
+    public record StandardShape(List<List<Double>> polygon, Double lengthMm, Double areaMm2) {
     }
 
     /** 사진의 호모그래피로 원본 px를 표준 좌표 px로 옮기고 길이·넓이를 잰다. 옮길 수 없으면 표준 좌표 없음으로 둔다. */
