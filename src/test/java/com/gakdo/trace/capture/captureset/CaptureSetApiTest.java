@@ -449,8 +449,8 @@ class CaptureSetApiTest extends WebTestBase {
 
         JsonNode all = tree(reissue(setId, capture(), null).andExpect(status().isOk()).andReturn().getResponse()
                 .getContentAsString()).get("uploads");
-        assertThat(all).hasSize(PHONE_FACES.size()); // 8장 중 TOP 제외
-        assertThat(all).noneMatch(u -> u.get("face").asText().equals("TOP"));
+        assertThat(all).hasSize(PHONE_FACES.size()) // 8장 중 TOP 제외
+                .noneMatch(u -> u.get("face").asText().equals("TOP"));
 
         String picked = "{\"photos\":[" + ref("SCR1", "OFF", "PHONE") + "," + ref("TOP", "ROOM", "PHONE") + ","
                 + ref("BOT", "ROOM", "PHONE") + "]}";

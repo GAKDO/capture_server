@@ -133,8 +133,8 @@ public class InspectionService {
         } else {
             log.warn("정합 결과가 없는 사진의 흠집입니다 defectId={} photoId={}", d.defectId(), d.photoId());
         }
-        return Defect.fromWorker(d.defectId(), photo, cls, photoPolygon, d.polygon(), d.lengthMm(), d.areaMm2(),
-                d.confidence(), modelVersion);
+        return Defect.fromWorker(d.defectId(), photo, cls, photoPolygon,
+                new Defect.StandardShape(d.polygon(), d.lengthMm(), d.areaMm2()), d.confidence(), modelVersion);
     }
 
     private void saveTextures(CaptureSet set, Map<String, String> keys) {

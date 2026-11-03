@@ -68,7 +68,7 @@ class QuickSetDomainTest {
         assertThatThrownBy(() -> CompletionCheck.check(CaptureSource.BOOTH, CaptureProfile.QUICK, states, Map.of()))
                 .isInstanceOfSatisfying(DomainException.class, e -> {
                     assertThat(e.code()).isEqualTo(ErrorCode.CAPTURE_FACES_MISSING);
-                    assertThat(e.properties().get("missingFaces")).isEqualTo(List.of(Face.BOT));
+                    assertThat(e.properties()).containsEntry("missingFaces", List.of(Face.BOT));
                 });
         assertThatThrownBy(() -> CompletionCheck.checkSkippable(CaptureSource.BOOTH, CaptureProfile.QUICK,
                 Map.of(Face.BOT, "뒤집지 못함")))
@@ -84,7 +84,7 @@ class QuickSetDomainTest {
         assertThatThrownBy(() -> CompletionCheck.check(CaptureSource.BOOTH, CaptureProfile.QUICK, states, Map.of()))
                 .isInstanceOfSatisfying(DomainException.class, e -> {
                     assertThat(e.code()).isEqualTo(ErrorCode.CAPTURE_FACES_MISSING);
-                    assertThat(e.properties().get("missingFaces")).isEqualTo(List.of(Face.TOP));
+                    assertThat(e.properties()).containsEntry("missingFaces", List.of(Face.TOP));
                 });
     }
 

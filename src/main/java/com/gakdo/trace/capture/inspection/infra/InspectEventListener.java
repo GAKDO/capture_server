@@ -2,8 +2,6 @@ package com.gakdo.trace.capture.inspection.infra;
 
 import java.io.IOException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -22,8 +20,6 @@ import com.gakdo.trace.capture.inspection.application.InvalidEventException;
  */
 @Component
 public class InspectEventListener {
-
-    private static final Logger log = LoggerFactory.getLogger(InspectEventListener.class);
 
     private final InspectionService service;
     private final ObjectReader reader;
@@ -44,15 +40,14 @@ public class InspectEventListener {
         try {
             event = reader.readValue(body);
         } catch (IOException e) {
-            log.warn("검사 완료 이벤트를 읽을 수 없어 DLX로 보냅니다: {}", e.getMessage());
-            throw new AmqpRejectAndDontRequeueException("이벤트 JSON을 읽을 수 없습니다", e);
+            // 재시도하지 않고 DLX로 보낸다. 로그는 리스너 컨테이너가 이 예외와 함께 남긴다
+            throw new AmqpRejectAndDontRequeueException("검사 완료 이벤트 JSON을 읽을 수 없어 DLX로 보냅니다: " + e.getMessage(), e);
         }
         try {
             return service.onInspected(event);
         } catch (InvalidEventException e) {
-            log.warn("검사 완료 이벤트가 올바르지 않아 DLX로 보냅니다 eventId={} set={}: {}", event.eventId(),
-                    event.captureSetId(), e.getMessage());
-            throw new AmqpRejectAndDontRequeueException(e.getMessage(), e);
+            throw new AmqpRejectAndDontRequeueException("검사 완료 이벤트가 올바르지 않아 DLX로 보냅니다 eventId="
+                    + event.eventId() + " set=" + event.captureSetId() + ": " + e.getMessage(), e);
         }
     }
 }

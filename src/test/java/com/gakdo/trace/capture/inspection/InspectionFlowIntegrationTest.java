@@ -10,10 +10,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.locks.LockSupport;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -58,6 +60,8 @@ import com.gakdo.trace.capture.support.FakePhotoStorage;
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class InspectionFlowIntegrationTest {
+
+    private static final Duration POLL_INTERVAL = Duration.ofMillis(100);
 
     private static final String RENTAL = "Rnt0HLv6QRbDILPWOcz5I";
     private static final String OTHER_RENTAL = "Rnt1HLv6QRbDILPWOcz5I";
@@ -120,6 +124,18 @@ class InspectionFlowIntegrationTest {
         rabbitAdmin.declareBinding(BindingBuilder.bind(graded).to(new TopicExchange("trace.events"))
                 .with("trace.checkpoint.graded"));
 
+        List<String> outTopIds = shipOut(graded.getName());
+        receiveByPhone(graded.getName(), outTopIds);
+        Returned returned = returnToBooth(graded.getName());
+        checkAccessAndMedia(returned.setId(), returned.detections());
+    }
+
+    /** 반납 세트 ID와 그 세트에 보낸 탐지 요청 본문. */
+    private record Returned(String setId, String detections) {
+    }
+
+    /** 출고: 기준선 등급을 확인하고, 수령과 짝지을 수 있는 TOP 긁힘 ID 두 개를 돌려준다. */
+    private List<String> shipOut(String gradedQueue) throws Exception {
         // ── 출고: 부스. 탐지 먼저(TOP 긁힘을 CAM1·CAM2가 같이 봄 + BOT 오염), 정합 뒤 등급
         JsonNode out = boothSet(RENTAL, CP_OUT);
         String outSet = out.get("captureSetId").asText();
@@ -142,16 +158,19 @@ class InspectionFlowIntegrationTest {
         assertThat(outTop.get("lengthMm").asDouble()).isEqualTo(10.05);
         assertThat(outTop.get("modelVersion").asText()).isEqualTo("yolo11s-seg-v001-trt-fp16");
         assertThat(outTop.get("match").isNull()).isTrue();   // 기준선은 짝을 만들지 않는다
-        JsonNode outEvent = receive(graded.getName());
+        JsonNode outEvent = receive(gradedQueue);
         assertThat(outEvent.get("checkpointType").asText()).isEqualTo("OUT");
         assertThat(outEvent.get("newDefectIds")).isEmpty();
         assertThat(outEvent.get("compared").asBoolean()).isFalse(); // 출고는 비교 대상이 없다
         assertThat(texts(outEvent.get("unjudgeableFaces"))).containsExactly("SF");
         assertThat(outEvent.get("photos")).hasSize(BOOTH_FACES.size() * 2);
         // 같은 긁힘을 CAM1·CAM2가 같이 봤으므로 둘 중 어느 쪽과 짝지어도 맞다
-        List<String> outTopIds = List.of(outTop.get("defectId").asText(),
+        return List.of(outTop.get("defectId").asText(),
                 outResult.get("defects").get(1).get("defectId").asText());
+    }
 
+    /** 수령: 출고와 같은 자리 긁힘은 EXISTING. */
+    private void receiveByPhone(String gradedQueue, List<String> outTopIds) throws Exception {
         // ── 수령: 폰. worker가 표준 좌표로 같은 자리 긁힘을 탐지 → EXISTING
         String rcvSet = phoneSet(CP_RCV);
         String topPhoto = photoIds(rcvSet, "TOP-PHONE").get(0);
@@ -163,10 +182,13 @@ class InspectionFlowIntegrationTest {
         JsonNode rcvTop = rcvResult.get("defects").get(0);
         assertThat(rcvTop.get("match").get("status").asText()).isEqualTo("EXISTING");
         assertThat(rcvTop.get("match").get("prevDefectId").asText()).isIn(outTopIds);
-        JsonNode rcvEvent = receive(graded.getName());
+        JsonNode rcvEvent = receive(gradedQueue);
         assertThat(rcvEvent.get("checkpointType").asText()).isEqualTo("RCV");
         assertThat(rcvEvent.get("newDefectIds")).isEmpty();
+    }
 
+    /** 반납: 새 긴 긁힘으로 C. 세트 ID와 탐지 요청 본문을 돌려준다. */
+    private Returned returnToBooth(String gradedQueue) throws Exception {
         // ── 반납: 부스. 정합이 먼저 오면 탐지를 기다리고, 탐지가 오면 바로 등급. 새 긴 긁힘(42.5 mm) → C
         JsonNode ret = boothSet(RENTAL, CP_RET);
         String retSet = ret.get("captureSetId").asText();
@@ -189,7 +211,7 @@ class InspectionFlowIntegrationTest {
         assertThat(statuses).containsExactly("EXISTING", "NEW");
         assertThat(retResult.get("defects").get(0).get("match").get("prevDefectId").asText())
                 .isEqualTo("dRcvTopScratch0000001");
-        JsonNode retEvent = receive(graded.getName());
+        JsonNode retEvent = receive(gradedQueue);
         assertThat(retEvent.get("checkpointType").asText()).isEqualTo("RET");
         assertThat(retEvent.get("grade").asText()).isEqualTo("C");
         assertThat(texts(retEvent.get("newDefectIds")))
@@ -206,7 +228,11 @@ class InspectionFlowIntegrationTest {
             }
         });
         assertThat(newPins).containsExactlyElementsOf(texts(retEvent.get("newDefectIds")));
+        return new Returned(retSet, retDetections);
+    }
 
+    /** 등급 뒤 재전송·고객 범위·3D 트윈 텍스처. */
+    private void checkAccessAndMedia(String retSet, String retDetections) throws Exception {
         // 등급이 매겨진 세트에 다시 보내면 409, 본인 렌탈이 아닌 고객은 403
         mvc.perform(post("/api/v1/captures/sets/" + retSet + "/detections").with(booth())
                 .contentType(MediaType.APPLICATION_JSON).content(retDetections))
@@ -265,9 +291,11 @@ class InspectionFlowIntegrationTest {
         String missing = "{\"schemaVersion\":\"1.0\",\"eventId\":\"evMissing000000000001\",\"rentalId\":\""
                 + OTHER_RENTAL + "\",\"checkpointId\":\"CpMisQOlTkKj6mOecAQt5\",\"captureSetId\":\"NoSuchSet000000000001\","
                 + "\"modelVersion\":\"m\",\"alignments\":[],\"defects\":[],\"textureKeys\":{},\"extraField\":1}";
-        assertThatThrownBy(() -> listener.handle(missing.getBytes()))
+        byte[] missingBody = missing.getBytes();
+        byte[] notJson = "not json".getBytes();
+        assertThatThrownBy(() -> listener.handle(missingBody))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
-        assertThatThrownBy(() -> listener.handle("not json".getBytes()))
+        assertThatThrownBy(() -> listener.handle(notJson))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
 
         String checkpoint = "CpDupQOlTkKj6mOecAQt6";
@@ -278,7 +306,8 @@ class InspectionFlowIntegrationTest {
                 + "\"modelVersion\":\"m\",\"alignments\":[{\"photoId\":\"" + photo + "\",\"method\":\"CONTOUR\","
                 + "\"homography\":[[1,0],[0,1]],\"errorPx\":null,\"rectifiedKey\":\"r.jpg\"}],\"defects\":[],"
                 + "\"textureKeys\":{}}";
-        assertThatThrownBy(() -> listener.handle(badMatrix.getBytes()))
+        byte[] badMatrixBody = badMatrix.getBytes();
+        assertThatThrownBy(() -> listener.handle(badMatrixBody))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
 
         publishInspected(OTHER_RENTAL, checkpoint, setId, List.of(), List.of());
@@ -418,6 +447,11 @@ class InspectionFlowIntegrationTest {
         rabbit.send("trace.events", "trace.inspect.completed", new Message(json.writeValueAsBytes(event), props));
     }
 
+    /** 비동기 처리를 기다리는 폴링 간격(100 ms). */
+    private static void pause() {
+        LockSupport.parkNanos(POLL_INTERVAL.toNanos());
+    }
+
     private JsonNode awaitGrade(String checkpointId) throws Exception {
         for (int i = 0; i < 100; i++) {
             var res = mvc.perform(get("/api/v1/captures/checkpoints/" + checkpointId + "/inspection").with(admin()))
@@ -428,7 +462,7 @@ class InspectionFlowIntegrationTest {
                     return node;
                 }
             }
-            Thread.sleep(100);
+            pause();
         }
         throw new AssertionError("등급이 나지 않았습니다: " + checkpointId);
     }
@@ -440,7 +474,7 @@ class InspectionFlowIntegrationTest {
             if (expected.equals(set.get("status").asText())) {
                 return;
             }
-            Thread.sleep(100);
+            pause();
         }
         throw new AssertionError("세트 상태가 " + expected + "가 되지 않았습니다: " + setId);
     }

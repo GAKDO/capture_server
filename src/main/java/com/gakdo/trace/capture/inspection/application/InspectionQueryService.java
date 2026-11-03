@@ -104,15 +104,22 @@ public class InspectionQueryService {
         List<DefectView> list = defects.findBySet(set).stream()
                 .filter(d -> d.getPolygon() != null)
                 .map(d -> {
-                    DefectMatchRecord m = byDefect.get(d.getId());
-                    MatchView match = m == null ? null : new MatchView(m.getStatus().name(),
-                            m.getPrevDefect() == null ? null : m.getPrevDefect().getPublicId(), m.getDistanceMm());
+                    MatchView match = matchView(byDefect.get(d.getId()));
                     return new DefectView(d.getPublicId(), d.getPhoto().getFace().name(), d.getDefectClass().code(),
                             d.getPolygon(), d.getLengthMm(), d.getAreaMm2(), d.getConfidence(), d.getModelVersion(),
                             d.getSource().name(), match);
                 })
                 .toList();
         return view(checkpointId, grade, list, null);
+    }
+
+    /** 앞 시점 흠집과의 대응. 대응 기록이 없으면 null, 앞 흠집이 없으면(신규) prevDefectId가 null. */
+    private static MatchView matchView(DefectMatchRecord m) {
+        if (m == null) {
+            return null;
+        }
+        String prevId = m.getPrevDefect() == null ? null : m.getPrevDefect().getPublicId();
+        return new MatchView(m.getStatus().name(), prevId, m.getDistanceMm());
     }
 
     private static InspectionView view(String checkpointId, Optional<GradeResult> grade, List<DefectView> list,

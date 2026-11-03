@@ -67,7 +67,7 @@ public final class Shapes {
         double dy = s2.y() - s1.y();
         double len2 = dx * dx + dy * dy;
         double t = len2 == 0 ? 0 : ((p.x() - s1.x()) * dx + (p.y() - s1.y()) * dy) / len2;
-        t = Math.max(0, Math.min(1, t));
+        t = Math.clamp(t, 0.0, 1.0);
         return distance(p, new Point(s1.x() + t * dx, s1.y() + t * dy));
     }
 

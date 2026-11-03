@@ -25,7 +25,6 @@ import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
@@ -56,13 +55,12 @@ public class S3PhotoStorage implements PhotoStorage {
 
     @Override
     public UploadUrl presignPut(String objectKey, String contentType, String sha256Hex, Duration ttl) {
-        PutObjectRequest put = PutObjectRequest.builder()
-                .bucket(bucket)
-                .key(objectKey)
-                .contentType(contentType)
-                .checksumSHA256(base64(sha256Hex))
-                .build();
-        PresignedPutObjectRequest signed = presigner.presignPutObject(r -> r.signatureDuration(ttl).putObjectRequest(put));
+        PresignedPutObjectRequest signed = presigner.presignPutObject(r -> r.signatureDuration(ttl)
+                .putObjectRequest(put -> put
+                        .bucket(bucket)
+                        .key(objectKey)
+                        .contentType(contentType)
+                        .checksumSHA256(base64(sha256Hex))));
         Map<String, String> headers = new LinkedHashMap<>();
         signed.signedHeaders().forEach((name, values) -> {
             if (!"host".equalsIgnoreCase(name)) { // Host는 클라이언트가 URL에서 스스로 붙인다

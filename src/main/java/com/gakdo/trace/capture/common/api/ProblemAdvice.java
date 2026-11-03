@@ -35,6 +35,9 @@ public class ProblemAdvice {
 
     private static final Logger log = LoggerFactory.getLogger(ProblemAdvice.class);
 
+    /** 형식이 맞지 않는 값의 필드 오류 문장. */
+    private static final String BAD_FORMAT = "값의 형식이 올바르지 않습니다";
+
     @ExceptionHandler(DomainException.class)
     ResponseEntity<ProblemDetail> domain(DomainException e, HttpServletRequest request) {
         ProblemDetail problem = ProblemFactory.of(e.code(), e.getMessage(), request.getRequestURI(), e.errors());
@@ -74,9 +77,9 @@ public class ProblemAdvice {
         if (cause instanceof UnrecognizedPropertyException u) {
             errors = List.of(new FieldError(u.getPropertyName(), "받지 않는 필드입니다"));
         } else if (cause instanceof InvalidFormatException f) {
-            errors = List.of(new FieldError(path(f), "값의 형식이 올바르지 않습니다"));
+            errors = List.of(new FieldError(path(f), BAD_FORMAT));
         } else if (cause instanceof MismatchedInputException m && !m.getPath().isEmpty()) {
-            errors = List.of(new FieldError(path(m), "값의 형식이 올바르지 않습니다"));
+            errors = List.of(new FieldError(path(m), BAD_FORMAT));
         }
         return respond(ErrorCode.VALIDATION_FAILED, "요청 본문을 읽을 수 없습니다.", request, errors);
     }
@@ -85,7 +88,7 @@ public class ProblemAdvice {
             MissingRequestHeaderException.class, HttpMediaTypeNotSupportedException.class})
     ResponseEntity<ProblemDetail> badParameter(Exception e, HttpServletRequest request) {
         List<FieldError> errors = switch (e) {
-            case MethodArgumentTypeMismatchException m -> List.of(new FieldError(m.getName(), "값의 형식이 올바르지 않습니다"));
+            case MethodArgumentTypeMismatchException m -> List.of(new FieldError(m.getName(), BAD_FORMAT));
             case MissingRequestHeaderException h -> List.of(new FieldError(h.getHeaderName(), "필수 헤더입니다"));
             default -> List.of();
         };

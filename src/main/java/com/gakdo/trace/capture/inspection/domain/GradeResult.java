@@ -71,7 +71,7 @@ public class GradeResult {
         this.createdAt = Times.now();
     }
 
-    public void record(CaptureSet set, Grade grade, String ruleVersion, List<String> reasons, List<Face> unjudgeable) {
+    public void recordGrade(CaptureSet set, Grade grade, String ruleVersion, List<String> reasons, List<Face> unjudgeable) {
         this.captureSet = set;
         this.grade = grade;
         this.ruleVersion = ruleVersion;

@@ -139,8 +139,8 @@ class ViewComparatorTest {
         assertThat(comparator.compare(snap(prev), snap(near, far)).matches()).containsExactly(
                 new DefectMatch("c1", MatchStatus.EXISTING, "p1", 5.0),
                 new DefectMatch("c2", MatchStatus.NEW, null, 5.25));
-        assertThatThrownBy(() -> DefectObservation.fromStandardPx("x", Face.TOP, DefectClass.DENT,
-                List.of(List.of(1.0), List.of(1.0, 2.0), List.of(2.0, 2.0))))
+        List<List<Double>> shortVertex = List.of(List.of(1.0), List.of(1.0, 2.0), List.of(2.0, 2.0));
+        assertThatThrownBy(() -> DefectObservation.fromStandardPx("x", Face.TOP, DefectClass.DENT, shortVertex))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
@@ -160,7 +160,8 @@ class ViewComparatorTest {
         assertThatThrownBy(() -> new MatchRule("v", Double.NaN, 2)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new MatchRule("v", 5, Double.POSITIVE_INFINITY))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> d("x", Face.TOP, DefectClass.DENT, List.of(new Point(0, 0), new Point(1, 1))))
+        List<Point> twoPoints = List.of(new Point(0, 0), new Point(1, 1));
+        assertThatThrownBy(() -> d("x", Face.TOP, DefectClass.DENT, twoPoints))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new Point(Double.NaN, 0)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ViewComparator(null)).isInstanceOf(NullPointerException.class);

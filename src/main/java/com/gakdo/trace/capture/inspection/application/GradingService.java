@@ -137,7 +137,7 @@ public class GradingService {
         GradeResult result = grades.findByCheckpointId(set.getCheckpointId())
                 .orElseGet(() -> new GradeResult(set.getCheckpointId()));
         List<Face> unjudgeableFaces = List.copyOf(unjudgeable.keySet());
-        result.record(set, outcome.grade(), outcome.ruleVersion(), outcome.reasons(), unjudgeableFaces);
+        result.recordGrade(set, outcome.grade(), outcome.ruleVersion(), outcome.reasons(), unjudgeableFaces);
         grades.save(result);
         set.markGraded();
 
@@ -146,9 +146,11 @@ public class GradingService {
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
                 outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds),
                 previous.isPresent()));
-        log.info("등급 set={} checkpoint={} type={} grade={} 신규={} 판정불가={} 비교={}", set.getPublicId(),
-                set.getCheckpointId(), kind, outcome.grade(), newIds.size(), unjudgeableFaces,
-                previous.map(GradeResult::getCheckpointId).orElse("없음(기준선)"));
+        if (log.isInfoEnabled()) {
+            log.info("등급 set={} checkpoint={} type={} grade={} 신규={} 판정불가={} 비교={}", set.getPublicId(),
+                    set.getCheckpointId(), kind, outcome.grade(), newIds.size(), unjudgeableFaces,
+                    previous.map(GradeResult::getCheckpointId).orElse("없음(기준선)"));
+        }
         return true;
     }
 
@@ -186,7 +188,7 @@ public class GradingService {
         GradeResult result = grades.findByCheckpointId(set.getCheckpointId())
                 .orElseGet(() -> new GradeResult(set.getCheckpointId()));
         List<Face> unjudgeableFaces = List.copyOf(unjudgeable.keySet());
-        result.record(set, outcome.grade(), outcome.ruleVersion(), List.copyOf(reasons), unjudgeableFaces);
+        result.recordGrade(set, outcome.grade(), outcome.ruleVersion(), List.copyOf(reasons), unjudgeableFaces);
         grades.save(result);
         set.markGradedQuick();
 

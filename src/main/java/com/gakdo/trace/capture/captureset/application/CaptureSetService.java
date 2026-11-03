@@ -56,6 +56,9 @@ public class CaptureSetService {
 
     private static final Logger log = LoggerFactory.getLogger(CaptureSetService.class);
 
+    /** 찾지 못한 대상 이름(404 문장). */
+    private static final String CAPTURE_SET = "촬영 세트";
+
     private final CaptureSetRepository sets;
     private final PhotoStorage storage;
     private final CaptureEventPublisher events;
@@ -85,13 +88,19 @@ public class CaptureSetService {
     @Transactional
     public CaptureSetCreateResponse create(Caller caller, String rentalId, String checkpointId, CaptureSource source,
             DeviceModel device, List<NewPhoto> photos) {
-        return create(caller, rentalId, checkpointId, source, device, null, photos);
+        return doCreate(caller, rentalId, checkpointId, source, device, null, photos);
     }
 
     /** profile은 세트 범위(null이면 FULL, QUICK은 부스 빠른 검사). */
     @Transactional
     public CaptureSetCreateResponse create(Caller caller, String rentalId, String checkpointId, CaptureSource source,
             DeviceModel device, CaptureProfile profile, List<NewPhoto> photos) {
+        return doCreate(caller, rentalId, checkpointId, source, device, profile, photos);
+    }
+
+    /** 두 create의 본문. 트랜잭션은 부른 public 메서드의 것을 쓴다(this로 @Transactional 메서드를 부르지 않기 위해 뺌). */
+    private CaptureSetCreateResponse doCreate(Caller caller, String rentalId, String checkpointId,
+            CaptureSource source, DeviceModel device, CaptureProfile profile, List<NewPhoto> photos) {
         caller.requireCapturer();
         String boothId = null;
         if (caller.isBooth()) {
@@ -124,7 +133,7 @@ public class CaptureSetService {
     @Transactional(readOnly = true)
     public UploadReissueResponse reissueUploads(Caller caller, String setId, List<PhotoRef> requested) {
         caller.requireCapturer();
-        CaptureSet set = sets.findByPublicId(setId).orElseThrow(() -> DomainException.notFound("촬영 세트"));
+        CaptureSet set = sets.findByPublicId(setId).orElseThrow(() -> DomainException.notFound(CAPTURE_SET));
         checkWriteScope(caller, set);
         if (set.isCompleted()) {
             throw new DomainException(ErrorCode.CAPTURE_SET_CLOSED, null);
@@ -181,7 +190,7 @@ public class CaptureSetService {
     @Transactional
     public CaptureSetView complete(Caller caller, String setId, String idempotencyKey, Map<Face, String> skipped) {
         caller.requireCapturer();
-        CaptureSet set = sets.findForUpdate(setId).orElseThrow(() -> DomainException.notFound("촬영 세트"));
+        CaptureSet set = sets.findForUpdate(setId).orElseThrow(() -> DomainException.notFound(CAPTURE_SET));
         checkWriteScope(caller, set);
 
         String requestHash = requestHash(skipped);
@@ -229,7 +238,7 @@ public class CaptureSetService {
         if (!caller.isAdmin() && !caller.isCaptureToken()) {
             throw new DomainException(ErrorCode.FORBIDDEN, "촬영 링크로 받은 토큰이나 관리자만 볼 수 있습니다.");
         }
-        CaptureSet set = sets.findByPublicId(setId).orElseThrow(() -> DomainException.notFound("촬영 세트"));
+        CaptureSet set = sets.findByPublicId(setId).orElseThrow(() -> DomainException.notFound(CAPTURE_SET));
         if (!caller.isAdmin() && !set.getCheckpointId().equals(caller.scope())) {
             throw Caller.outOfScope();
         }
