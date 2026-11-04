@@ -68,4 +68,13 @@ class PurgeEventListenerTest {
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
         verify(store, never()).deleteCheckpoint(any());
     }
+
+    @Test
+    @DisplayName("이벤트의 렌탈이 저장된 세트의 렌탈과 다르면 지우지 않고 DLX로 보낸다")
+    void refusesMismatchedRental() {
+        when(store.belongsToOtherRental("Ws0HLv6QRbDILPWOcz5I2", CP)).thenReturn(true);
+        assertThatThrownBy(() -> listener.handle(event("TEST-0002")))
+                .isInstanceOf(AmqpRejectAndDontRequeueException.class);
+        verify(store, never()).deleteCheckpoint(any());
+    }
 }

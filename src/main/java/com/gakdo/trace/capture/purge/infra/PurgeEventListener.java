@@ -53,24 +53,30 @@ public class PurgeEventListener {
             throw new AmqpRejectAndDontRequeueException("시험 데이터가 아니거나 형식이 맞지 않아 지우지 않고 DLX로 보냅니다 eventId="
                     + event.eventId());
         }
-        PurgeStore.Keys keys = service.purge(event);
+        PurgeStore.Keys keys;
+        try {
+            keys = service.purge(event);
+        } catch (IllegalArgumentException e) {
+            throw new AmqpRejectAndDontRequeueException("시험 시점을 지우지 않고 DLX로 보냅니다: " + e.getMessage(), e);
+        }
         int failed = 0;
         for (String key : keys.captureKeys()) {
-            failed += deleteQuietly(() -> storage.deleteCapture(key));
+            failed += deleteQuietly(key, () -> storage.deleteCapture(key));
         }
         for (String key : keys.derivedKeys()) {
-            failed += deleteQuietly(() -> storage.deleteDerived(key));
+            failed += deleteQuietly(key, () -> storage.deleteDerived(key));
         }
         if (failed > 0) {
             log.warn("시험 시점 객체 일부를 지우지 못함 checkpoint={} 실패={}", event.checkpointId(), failed);
         }
     }
 
-    private static int deleteQuietly(Runnable delete) {
+    private static int deleteQuietly(String key, Runnable delete) {
         try {
             delete.run();
             return 0;
         } catch (RuntimeException e) {
+            log.warn("시험 시점 객체를 지우지 못함 key={}", key, e);
             return 1;
         }
     }

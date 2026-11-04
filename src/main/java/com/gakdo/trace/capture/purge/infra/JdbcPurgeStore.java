@@ -25,6 +25,13 @@ public class JdbcPurgeStore implements PurgeStore {
     }
 
     @Override
+    public boolean belongsToOtherRental(String rentalId, String checkpointId) {
+        return Boolean.TRUE.equals(jdbc.queryForObject(
+                "select exists(select 1 from capture.capture_set where checkpoint_id = ? and rental_id <> ?)",
+                Boolean.class, checkpointId, rentalId));
+    }
+
+    @Override
     public Keys keysOf(String checkpointId) {
         List<String> captures = jdbc.queryForList(
                 "select object_key from capture.photo where capture_set_id in (" + SETS + ")", String.class, checkpointId);

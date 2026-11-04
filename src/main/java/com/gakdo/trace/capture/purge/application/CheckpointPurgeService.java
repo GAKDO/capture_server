@@ -22,6 +22,9 @@ public class CheckpointPurgeService {
 
     @Transactional
     public PurgeStore.Keys purge(CheckpointPurgedEvent event) {
+        if (store.belongsToOtherRental(event.rentalId(), event.checkpointId())) {
+            throw new IllegalArgumentException("이벤트의 렌탈과 저장된 세트의 렌탈이 다릅니다 checkpoint=" + event.checkpointId());
+        }
         PurgeStore.Keys keys = store.keysOf(event.checkpointId());
         int sets = store.deleteCheckpoint(event.checkpointId());
         log.info("시험 시점 지움 rental={} checkpoint={} 세트={} 사진={}", event.rentalId(), event.checkpointId(), sets,
