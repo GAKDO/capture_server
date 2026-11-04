@@ -100,6 +100,10 @@ public class GradeResult {
         return captureSet;
     }
 
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
     public List<Face> getUnjudgeableFaces() {
         return unjudgeableFaces;
     }

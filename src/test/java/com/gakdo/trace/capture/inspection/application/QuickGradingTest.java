@@ -31,8 +31,10 @@ import com.gakdo.trace.capture.captureset.domain.Light;
 import com.gakdo.trace.capture.captureset.domain.Photo;
 import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.comparison.domain.DefectClass;
+import com.gakdo.trace.capture.inspection.domain.CheckpointKind;
 import com.gakdo.trace.capture.inspection.domain.Defect;
 import com.gakdo.trace.capture.inspection.domain.Grade;
+import com.gakdo.trace.capture.inspection.domain.GradeResult;
 import com.gakdo.trace.capture.inspection.infra.DefectMatchRepository;
 import com.gakdo.trace.capture.inspection.infra.DefectRepository;
 import com.gakdo.trace.capture.inspection.infra.FaceAlignmentRepository;
@@ -142,8 +144,77 @@ class QuickGradingTest {
         verify(events, never()).publishGraded(any());
     }
 
+    @Test
+    @DisplayName("부스 빠른 검사로 찍어도 앞서 등급 난 시점이 1개면 수령(RCV), 2개면 반납(RET)으로 보낸다")
+    void boothQuickCanBeReceiveOrReturn() {
+        assertThat(kindAfter(1)).isEqualTo(CheckpointKind.RCV);
+        assertThat(kindAfter(2)).isEqualTo(CheckpointKind.RET);
+        assertThat(kindAfter(0)).isEqualTo(CheckpointKind.OUT);
+    }
+
+    @Test
+    @DisplayName("앞 시점도 빠른 검사면 흠집 수를 '앞 시점 비교(개수만)' 근거로 나란히 보이고, 등급은 이번 흠집으로만 정한다")
+    void quickComparesCountWithPrevious() {
+        CaptureSet out = completedQuickSet("check-00000000000001");
+        when(defects.findBySet(out)).thenReturn(List.of());
+        GradeResult previous = new GradeResult(out.getCheckpointId());
+        previous.recordGrade(out, Grade.A, "grade-rules-v1", List.of(), List.of());
+        when(grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(anyString(), anyString()))
+                .thenReturn(Optional.of(previous));
+        when(grades.countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(anyString(), anyString(), any()))
+                .thenReturn(1L);
+
+        CaptureSet ret = completedQuickSet("check-00000000000002");
+        ret.markDetectionsReceived();
+        when(defects.findBySet(ret)).thenReturn(List.of(
+                Defect.fromBooth(photo(ret, Face.TOP, Camera.CAM1), DefectClass.SCRATCH, BOX, 0.9, "v"),
+                Defect.fromBooth(photo(ret, Face.BOT, Camera.CAM2), DefectClass.STAIN, BOX, 0.9, "v")));
+        ArgumentCaptor<GradeResult> saved = ArgumentCaptor.forClass(GradeResult.class);
+
+        grading.gradeIfReady(ret);
+
+        verify(grades).save(saved.capture());
+        assertThat(saved.getValue().getReasons()).contains("앞 시점 비교(개수만): 흠집 0개 → 1개(1개 늘어남, 오염 제외)");
+        ArgumentCaptor<CheckpointGradedEvent> sent = ArgumentCaptor.forClass(CheckpointGradedEvent.class);
+        verify(events).publishGraded(sent.capture());
+        assertThat(sent.getValue().checkpointType()).isEqualTo(CheckpointKind.RCV);
+        assertThat(sent.getValue().grade()).isEqualTo(Grade.B);
+    }
+
+    @Test
+    @DisplayName("앞 시점을 다시 찍어 재등급해도 그 시점의 첫 등급 시각보다 먼저 등급 난 시점만 세어 종류가 바뀌지 않는다")
+    void regradeKeepsKindByFirstGradeTime() {
+        CaptureSet set = completedQuickSet();
+        set.markDetectionsReceived();
+        when(defects.findBySet(set)).thenReturn(List.of());
+        GradeResult existing = new GradeResult(set.getCheckpointId());
+        when(grades.findByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(existing));
+
+        grading.gradeIfReady(set);
+
+        verify(grades).countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(set.getRentalId(),
+                set.getCheckpointId(), existing.getCreatedAt());
+    }
+
+    private CheckpointKind kindAfter(long earlier) {
+        when(grades.countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(anyString(), anyString(), any()))
+                .thenReturn(earlier);
+        CaptureSet set = completedQuickSet();
+        set.markDetectionsReceived();
+        when(defects.findBySet(set)).thenReturn(List.of());
+        GradeEventPublisher publisher = mock(GradeEventPublisher.class);
+        new GradingService(defects, matches, mock(FaceAlignmentRepository.class), grades, publisher).gradeIfReady(set);
+        ArgumentCaptor<CheckpointGradedEvent> sent = ArgumentCaptor.forClass(CheckpointGradedEvent.class);
+        verify(publisher).publishGraded(sent.capture());
+        return sent.getValue().checkpointType();
+    }
+
     private static CaptureSet completedQuickSet() {
-        CaptureSet set = CaptureSet.open("rental-000000000000001", "check-00000000000001", CaptureSource.BOOTH,
+        return completedQuickSet("check-00000000000001");
+    }
+
+    private static CaptureSet completedQuickSet(String checkpointId) {
+        CaptureSet set = CaptureSet.open("rental-000000000000001", checkpointId, CaptureSource.BOOTH,
                 "booth-1", null, CaptureProfile.QUICK, specs());
         Set<String> present = new HashSet<>();
         set.getPhotos().forEach(p -> present.add(p.getPublicId()));

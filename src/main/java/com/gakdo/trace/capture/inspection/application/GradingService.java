@@ -25,6 +25,7 @@ import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.common.infra.PublicIds;
 import com.gakdo.trace.capture.common.infra.Times;
 import com.gakdo.trace.capture.comparison.domain.ComparisonResult;
+import com.gakdo.trace.capture.comparison.domain.DefectClass;
 import com.gakdo.trace.capture.comparison.domain.DefectMatch;
 import com.gakdo.trace.capture.comparison.domain.DefectObservation;
 import com.gakdo.trace.capture.comparison.domain.MatchRule;
@@ -141,7 +142,7 @@ public class GradingService {
         grades.save(result);
         set.markGraded();
 
-        CheckpointKind kind = CheckpointKind.infer(set.getSource(), previous.isPresent());
+        CheckpointKind kind = kindOf(set, result);
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
                 outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds),
@@ -179,11 +180,13 @@ public class GradingService {
         }
 
         List<DefectGroups.Group> groups = quickGroups(defects.findBySet(set), uploaded);
-        boolean baseline = grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(
-                set.getRentalId(), set.getCheckpointId()).isEmpty();
+        Optional<GradeResult> previous = grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(
+                set.getRentalId(), set.getCheckpointId());
+        boolean baseline = previous.isEmpty();
         GradeRules.Outcome outcome = GradeRules.evaluate(groups, unjudgeable, baseline);
         List<String> reasons = new ArrayList<>(outcome.reasons());
-        reasons.add("빠른 검사(위·아래 " + uploaded.size() + "면, 정합·시점 비교 없음)");
+        reasons.add("빠른 검사(위·아래 " + uploaded.size() + "면, 정합·위치 비교 없음)");
+        previous.map(p -> quickCountChange(p, groups)).ifPresent(reasons::add);
 
         GradeResult result = grades.findByCheckpointId(set.getCheckpointId())
                 .orElseGet(() -> new GradeResult(set.getCheckpointId()));
@@ -192,7 +195,7 @@ public class GradingService {
         grades.save(result);
         set.markGradedQuick();
 
-        CheckpointKind kind = CheckpointKind.infer(set.getSource(), !baseline);
+        CheckpointKind kind = kindOf(set, result);
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
                 outcome.ruleVersion(), List.of(), unjudgeableFaces, photoHashes(set), List.of(), false));
@@ -220,6 +223,38 @@ public class GradingService {
         List<DefectGroups.Group> groups = new ArrayList<>();
         byPhotoFrame.values().forEach(items -> groups.addAll(DefectGroups.group(items, RULE)));
         return groups;
+    }
+
+    /**
+     * 시점 종류: 같은 렌탈에서 이 시점보다 먼저 등급이 난 다른 시점 수로 정한다(부스·폰 출처와 무관). 이 시점의 첫 등급 시각을 기준으로
+     * 세므로, 뒤 시점이 등급 난 뒤 앞 시점을 다시 찍어도(재등급) 앞 시점 종류가 바뀌지 않는다.
+     */
+    private CheckpointKind kindOf(CaptureSet set, GradeResult result) {
+        return CheckpointKind.ofPosition(grades.countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(
+                set.getRentalId(), set.getCheckpointId(), result.getCreatedAt()));
+    }
+
+    /**
+     * 빠른 검사 시점 비교(개수만): 앞 시점도 빠른 검사면 같은 방식으로 센 흠집 수(오염 제외)를 나란히 적는다. 위치로 같은 흠집인지는
+     * 모르므로(기기를 놓는 자리가 매번 다름) 신규 판정·등급에는 쓰지 않고 근거 문장으로만 보인다. 앞 시점이 전체 세트면 세는 법이 달라 적지 않는다.
+     */
+    private String quickCountChange(GradeResult previous, List<DefectGroups.Group> current) {
+        CaptureSet prevSet = previous.getCaptureSet();
+        if (prevSet == null || prevSet.getProfile() != CaptureProfile.QUICK) {
+            return null;
+        }
+        Set<Face> prevFaces = EnumSet.noneOf(Face.class);
+        prevSet.getPhotos().stream().filter(Photo::isUploaded).forEach(p -> prevFaces.add(p.getFace()));
+        prevFaces.removeAll(prevSet.getSkippedFaces().keySet());
+        long before = countNonStain(quickGroups(defects.findBySet(prevSet), prevFaces));
+        long now = countNonStain(current);
+        long diff = now - before;
+        String change = diff > 0 ? diff + "개 늘어남" : diff < 0 ? (-diff) + "개 줄어듦" : "같음";
+        return "앞 시점 비교(개수만): 흠집 " + before + "개 → " + now + "개(" + change + ", 오염 제외)";
+    }
+
+    private static long countNonStain(List<DefectGroups.Group> groups) {
+        return groups.stream().filter(g -> g.defectClass() != DefectClass.STAIN).count();
     }
 
     private static List<PhotoState> states(CaptureSet set, Set<Long> aligned) {
