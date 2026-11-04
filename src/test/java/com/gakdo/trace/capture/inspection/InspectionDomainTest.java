@@ -10,7 +10,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.gakdo.trace.capture.captureset.domain.Camera;
-import com.gakdo.trace.capture.captureset.domain.CaptureSource;
 import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.comparison.domain.DefectClass;
 import com.gakdo.trace.capture.comparison.domain.DefectObservation;
@@ -164,11 +163,12 @@ class InspectionDomainTest {
     }
 
     @Test
-    @DisplayName("시점 종류: 폰은 수령, 부스는 앞 시점이 있으면 반납, 없으면 출고")
+    @DisplayName("시점 종류: 같은 렌탈에서 앞서 등급 난 시점이 0개면 출고, 1개면 수령, 2개 이상이면 반납(촬영 출처와 무관)")
     void checkpointKind() {
-        assertThat(CheckpointKind.infer(CaptureSource.PHONE, true)).isEqualTo(CheckpointKind.RCV);
-        assertThat(CheckpointKind.infer(CaptureSource.BOOTH, false)).isEqualTo(CheckpointKind.OUT);
-        assertThat(CheckpointKind.infer(CaptureSource.BOOTH, true)).isEqualTo(CheckpointKind.RET);
+        assertThat(CheckpointKind.ofPosition(0)).isEqualTo(CheckpointKind.OUT);
+        assertThat(CheckpointKind.ofPosition(1)).isEqualTo(CheckpointKind.RCV);
+        assertThat(CheckpointKind.ofPosition(2)).isEqualTo(CheckpointKind.RET);
+        assertThat(CheckpointKind.ofPosition(3)).isEqualTo(CheckpointKind.RET);
     }
 
     private static Group group(DefectClass c, Double len, Boolean isNew) {
