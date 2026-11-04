@@ -128,6 +128,30 @@ class InspectionFlowIntegrationTest {
         receiveByPhone(graded.getName(), outTopIds);
         Returned returned = returnToBooth(graded.getName());
         checkAccessAndMedia(returned.setId(), returned.detections());
+        purgeAll();
+    }
+
+    /** 시험 렌탈 지우기(trace.checkpoint.purged): 세 시점을 지우면 매칭·흠집까지 실제 DB에서 모두 사라지고 /inspection은 404. */
+    private void purgeAll() throws Exception {
+        List<String> checkpoints = List.of(CP_OUT, CP_RCV, CP_RET);
+        for (String cp : checkpoints) {
+            Map<String, Object> event = Map.of("schemaVersion", "1.0", "eventId", ("pg" + cp).substring(0, 21),
+                    "occurredAt", "2026-11-12T13:06:00+09:00", "rentalId", RENTAL, "checkpointId", cp,
+                    "checkpointType", "OUT", "deviceId", "Nq8sUe2ZpW4cYb6Td1MfA", "serial", "TEST-0002");
+            MessageProperties props = new MessageProperties();
+            props.setContentType("application/json");
+            rabbit.send("trace.events", "trace.checkpoint.purged", new Message(json.writeValueAsBytes(event), props));
+        }
+        for (String cp : checkpoints) {
+            for (int i = 0; i < 100 && mvc.perform(get("/api/v1/captures/checkpoints/" + cp + "/inspection")
+                    .with(admin())).andReturn().getResponse().getStatus() != 404; i++) {
+                pause();
+            }
+            mvc.perform(get("/api/v1/captures/checkpoints/" + cp + "/inspection").with(admin()))
+                    .andExpect(status().isNotFound());
+        }
+        new TransactionTemplate(txManager).executeWithoutResult(t ->
+                assertThat(sets.findAll()).noneMatch(set -> RENTAL.equals(set.getRentalId())));
     }
 
     /** 반납 세트 ID와 그 세트에 보낸 탐지 요청 본문. */

@@ -56,6 +56,16 @@ public class FakePhotoStorage implements PhotoStorage {
     }
 
     @Override
+    public void deleteCapture(String objectKey) {
+        objects.remove(objectKey);
+    }
+
+    @Override
+    public void deleteDerived(String objectKey) {
+        objects.remove(objectKey);
+    }
+
+    @Override
     public boolean exists(String objectKey) {
         return objects.containsKey(objectKey);
     }
