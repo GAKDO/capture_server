@@ -142,7 +142,7 @@ public class GradingService {
         grades.save(result);
         set.markGraded();
 
-        CheckpointKind kind = kindOf(set);
+        CheckpointKind kind = kindOf(set, result);
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
                 outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds),
@@ -185,7 +185,7 @@ public class GradingService {
         boolean baseline = previous.isEmpty();
         GradeRules.Outcome outcome = GradeRules.evaluate(groups, unjudgeable, baseline);
         List<String> reasons = new ArrayList<>(outcome.reasons());
-        reasons.add("빠른 검사(위·아래 " + uploaded.size() + "면, 정합·시점 비교 없음)");
+        reasons.add("빠른 검사(위·아래 " + uploaded.size() + "면, 정합·위치 비교 없음)");
         previous.map(p -> quickCountChange(p, groups)).ifPresent(reasons::add);
 
         GradeResult result = grades.findByCheckpointId(set.getCheckpointId())
@@ -195,7 +195,7 @@ public class GradingService {
         grades.save(result);
         set.markGradedQuick();
 
-        CheckpointKind kind = kindOf(set);
+        CheckpointKind kind = kindOf(set, result);
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
                 outcome.ruleVersion(), List.of(), unjudgeableFaces, photoHashes(set), List.of(), false));
@@ -225,10 +225,13 @@ public class GradingService {
         return groups;
     }
 
-    /** 시점 종류: 같은 렌탈에서 앞서 등급이 난 시점 수로 정한다(부스·폰 출처와 무관). */
-    private CheckpointKind kindOf(CaptureSet set) {
-        return CheckpointKind.ofPosition(
-                grades.countByCaptureSetRentalIdAndCheckpointIdNot(set.getRentalId(), set.getCheckpointId()));
+    /**
+     * 시점 종류: 같은 렌탈에서 이 시점보다 먼저 등급이 난 다른 시점 수로 정한다(부스·폰 출처와 무관). 이 시점의 첫 등급 시각을 기준으로
+     * 세므로, 뒤 시점이 등급 난 뒤 앞 시점을 다시 찍어도(재등급) 앞 시점 종류가 바뀌지 않는다.
+     */
+    private CheckpointKind kindOf(CaptureSet set, GradeResult result) {
+        return CheckpointKind.ofPosition(grades.countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(
+                set.getRentalId(), set.getCheckpointId(), result.getCreatedAt()));
     }
 
     /**

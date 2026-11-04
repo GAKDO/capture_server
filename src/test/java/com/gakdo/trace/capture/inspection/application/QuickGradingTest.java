@@ -161,7 +161,8 @@ class QuickGradingTest {
         previous.recordGrade(out, Grade.A, "grade-rules-v1", List.of(), List.of());
         when(grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(anyString(), anyString()))
                 .thenReturn(Optional.of(previous));
-        when(grades.countByCaptureSetRentalIdAndCheckpointIdNot(anyString(), anyString())).thenReturn(1L);
+        when(grades.countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(anyString(), anyString(), any()))
+                .thenReturn(1L);
 
         CaptureSet ret = completedQuickSet("check-00000000000002");
         ret.markDetectionsReceived();
@@ -180,8 +181,24 @@ class QuickGradingTest {
         assertThat(sent.getValue().grade()).isEqualTo(Grade.B);
     }
 
+    @Test
+    @DisplayName("앞 시점을 다시 찍어 재등급해도 그 시점의 첫 등급 시각보다 먼저 등급 난 시점만 세어 종류가 바뀌지 않는다")
+    void regradeKeepsKindByFirstGradeTime() {
+        CaptureSet set = completedQuickSet();
+        set.markDetectionsReceived();
+        when(defects.findBySet(set)).thenReturn(List.of());
+        GradeResult existing = new GradeResult(set.getCheckpointId());
+        when(grades.findByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(existing));
+
+        grading.gradeIfReady(set);
+
+        verify(grades).countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(set.getRentalId(),
+                set.getCheckpointId(), existing.getCreatedAt());
+    }
+
     private CheckpointKind kindAfter(long earlier) {
-        when(grades.countByCaptureSetRentalIdAndCheckpointIdNot(anyString(), anyString())).thenReturn(earlier);
+        when(grades.countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(anyString(), anyString(), any()))
+                .thenReturn(earlier);
         CaptureSet set = completedQuickSet();
         set.markDetectionsReceived();
         when(defects.findBySet(set)).thenReturn(List.of());
