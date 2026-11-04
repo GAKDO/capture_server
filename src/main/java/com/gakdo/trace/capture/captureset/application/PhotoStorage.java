@@ -26,6 +26,12 @@ public interface PhotoStorage {
     /** 버킷 trace-captures 원본 사진의 사전 서명 GET URL. 빠른 검사 결과 화면이 사진을 직접 내려받는다(11/3 MVP, /media photos). */
     ViewUrl presignCaptureGet(String objectKey, Duration ttl);
 
+    /** 버킷 trace-captures 원본 사진을 지운다(시험 데이터 지우기). 없으면 아무것도 하지 않는다. */
+    void deleteCapture(String objectKey);
+
+    /** 버킷 trace-derived 객체(펼친 이미지·텍스처)를 지운다(시험 데이터 지우기). 없으면 아무것도 하지 않는다. */
+    void deleteDerived(String objectKey);
+
     record ViewUrl(String url, OffsetDateTime expiresAt) {
     }
 

@@ -101,6 +101,16 @@ public class S3PhotoStorage implements PhotoStorage {
     }
 
     @Override
+    public void deleteCapture(String objectKey) {
+        s3.deleteObject(r -> r.bucket(bucket).key(objectKey)); // S3 DELETE는 없는 키도 성공(204)
+    }
+
+    @Override
+    public void deleteDerived(String objectKey) {
+        s3.deleteObject(r -> r.bucket(derivedBucket).key(objectKey));
+    }
+
+    @Override
     public boolean exists(String objectKey) {
         return head(objectKey).isPresent();
     }
