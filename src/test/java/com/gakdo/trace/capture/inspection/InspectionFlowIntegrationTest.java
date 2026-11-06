@@ -166,7 +166,7 @@ class InspectionFlowIntegrationTest {
         String outDetections = "{\"modelVersion\":\"yolo11s-seg-v001-trt-fp16\",\"detections\":["
                 + detection("TOP", "CAM1", "scratch", 400, 400, 80) + ","
                 + detection("TOP", "CAM2", "scratch", 402, 401, 80) + ","
-                + detection("BOT", "CAM1", "stain", 600, 600, 60) + "]}";
+                + detection("BOT", "CAM1", "stain", 600, 600, 60) + "],\"inferenceMs\":28400}";
         mvc.perform(post("/api/v1/captures/sets/" + outSet + "/detections").with(booth())
                 .contentType(MediaType.APPLICATION_JSON).content(outDetections))
                 .andExpect(status().isCreated());
@@ -175,6 +175,7 @@ class InspectionFlowIntegrationTest {
         JsonNode outResult = awaitGrade(CP_OUT);
         assertThat(outResult.get("grade").asText()).isEqualTo("B");
         assertThat(outResult.get("ruleVersion").asText()).isEqualTo("grade-rules-v1");
+        checkBenchmark(outSet);
         assertThat(texts(outResult.get("reasons"))).contains("출고 기준선(비교할 앞 시점 없음)", "오염 1개는 등급에서 뺌")
                 .anyMatch(r -> r.startsWith("판정 불가 면 SF"));
         JsonNode outTop = outResult.get("defects").get(0);
@@ -191,6 +192,29 @@ class InspectionFlowIntegrationTest {
         // 같은 긁힘을 CAM1·CAM2가 같이 봤으므로 둘 중 어느 쪽과 짝지어도 맞다
         return List.of(outTop.get("defectId").asText(),
                 outResult.get("defects").get(1).get("defectId").asText());
+    }
+
+    /** 성능 그래프: 부스가 보낸 탐지 시간과 완료→등급 시간이 세트 행 하나로 나온다(관리자만). */
+    private void checkBenchmark(String setId) throws Exception {
+        JsonNode items = json.readTree(mvc.perform(get("/api/v1/captures/benchmarks?source=BOOTH&limit=100")
+                .with(admin())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
+                .get("items");
+        JsonNode row = null;
+        for (JsonNode item : items) {
+            assertThat(item.get("source").asText()).isEqualTo("BOOTH");
+            if (setId.equals(item.get("captureSetId").asText())) {
+                row = item;
+            }
+        }
+        assertThat(row).isNotNull();
+        assertThat(row.get("inferenceMs").asInt()).isEqualTo(28400);
+        assertThat(row.get("modelVersion").asText()).isEqualTo("yolo11s-seg-v001-trt-fp16");
+        assertThat(row.get("photoCount").asInt()).isEqualTo(BOOTH_FACES.size() * 2);
+        assertThat(row.get("completedAt").isNull()).isFalse();
+        assertThat(row.get("gradedAt").isNull()).isFalse();
+        assertThat(row.get("completedToGradedMs").asLong()).isGreaterThanOrEqualTo(0);
+        mvc.perform(get("/api/v1/captures/benchmarks").with(booth())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/captures/benchmarks?limit=101").with(admin())).andExpect(status().isBadRequest());
     }
 
     /** 수령: 출고와 같은 자리 긁힘은 EXISTING. */
