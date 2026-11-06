@@ -10,6 +10,8 @@ import com.gakdo.trace.capture.captureset.domain.Light;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -24,7 +26,8 @@ public final class InspectionDtos {
     public record DetectionBatchRequest(
             @NotBlank @Size(max = 64) String modelVersion,
             @NotNull @Valid List<@NotNull @Valid DetectionItem> detections,
-            @Size(max = 80) @Valid List<@NotNull @Valid PhotoRefItem> analyzedPhotos) {
+            @Size(max = 80) @Valid List<@NotNull @Valid PhotoRefItem> analyzedPhotos,
+            @Min(0) @Max(600_000) Integer inferenceMs) {
     }
 
     /** 분석을 마친 사진 하나(11/3 추가). 빠른 검사 세트는 TOP·BOT 사진 전부를 담아야 한다. */

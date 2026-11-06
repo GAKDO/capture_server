@@ -91,6 +91,15 @@ public class CaptureSet {
     @Column(name = "detections_received_at")
     private OffsetDateTime detectionsReceivedAt;
 
+    @Column(name = "completed_at")
+    private OffsetDateTime completedAt;
+
+    @Column(name = "detection_model_version", length = 64)
+    private String detectionModelVersion;
+
+    @Column(name = "inference_ms")
+    private Integer inferenceMs;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -197,12 +206,20 @@ public class CaptureSet {
         this.status = SetStatus.UPLOADED;
         this.completionKey = key;
         this.completionRequestSha256 = requestSha256;
+        this.completedAt = now;
         this.updatedAt = now;
     }
 
     /** 부스 탐지를 받았다(CA2). 부스 세트는 정합과 탐지가 모두 와야 등급을 매긴다. */
     public void markDetectionsReceived() {
+        markDetectionsReceived(null, null);
+    }
+
+    /** modelVersion·inferenceMs는 성능 그래프용(11/6). 다시 보내면 마지막 요청 값이 남는다(탐지를 통째로 바꾸는 것과 같다). */
+    public void markDetectionsReceived(String modelVersion, Integer inferenceMs) {
         this.detectionsReceivedAt = Times.now();
+        this.detectionModelVersion = modelVersion;
+        this.inferenceMs = inferenceMs;
         this.updatedAt = detectionsReceivedAt;
     }
 
@@ -239,6 +256,18 @@ public class CaptureSet {
         this.status = SetStatus.GRADED;
         this.quality = Quality.OK;
         this.updatedAt = Times.now();
+    }
+
+    public OffsetDateTime getCompletedAt() {
+        return completedAt;
+    }
+
+    public String getDetectionModelVersion() {
+        return detectionModelVersion;
+    }
+
+    public Integer getInferenceMs() {
+        return inferenceMs;
     }
 
     public OffsetDateTime getDetectionsReceivedAt() {
