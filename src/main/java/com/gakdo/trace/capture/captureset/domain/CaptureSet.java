@@ -100,6 +100,9 @@ public class CaptureSet {
     @Column(name = "inference_ms")
     private Integer inferenceMs;
 
+    @Column(name = "booth_total_ms")
+    private Integer boothTotalMs;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -217,9 +220,15 @@ public class CaptureSet {
 
     /** modelVersion·inferenceMs는 성능 그래프용(11/6). 다시 보내면 마지막 요청 값이 남는다(탐지를 통째로 바꾸는 것과 같다). */
     public void markDetectionsReceived(String modelVersion, Integer inferenceMs) {
+        markDetectionsReceived(modelVersion, inferenceMs, null);
+    }
+
+    /** boothTotalMs는 부스 촬영 시작 버튼→판정 ms(선택, contracts #30). 다시 보내면 마지막 요청 값이 남는다. */
+    public void markDetectionsReceived(String modelVersion, Integer inferenceMs, Integer boothTotalMs) {
         this.detectionsReceivedAt = Times.now();
         this.detectionModelVersion = modelVersion;
         this.inferenceMs = inferenceMs;
+        this.boothTotalMs = boothTotalMs;
         this.updatedAt = detectionsReceivedAt;
     }
 
@@ -268,6 +277,10 @@ public class CaptureSet {
 
     public Integer getInferenceMs() {
         return inferenceMs;
+    }
+
+    public Integer getBoothTotalMs() {
+        return boothTotalMs;
     }
 
     public OffsetDateTime getDetectionsReceivedAt() {

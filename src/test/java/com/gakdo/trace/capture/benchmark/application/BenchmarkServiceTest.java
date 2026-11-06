@@ -36,12 +36,13 @@ class BenchmarkServiceTest {
         BenchmarkRow row = new BenchmarkRow("U4aNk9bKxZfIZRBgSN2Uj", "h40b9AN9xMQhXRHrOyJWB", "BOOTH", "QUICK",
                 "booth-01", "yolo11s-seg-v001-trt-fp16", 12, 28_400, OffsetDateTime.parse("2026-11-09T14:02:10+09:00"),
                 OffsetDateTime.parse("2026-11-09T14:03:05+09:00"), null,
-                OffsetDateTime.parse("2026-11-09T14:03:37+09:00"));
+                OffsetDateTime.parse("2026-11-09T14:03:37+09:00"), 91_500);
 
         Benchmark b = BenchmarkService.toBenchmark(row);
 
         assertThat(b.photoCount()).isEqualTo(12);
         assertThat(b.inferenceMs()).isEqualTo(28_400);
+        assertThat(b.boothTotalMs()).isEqualTo(91_500);
         assertThat(b.detectionsReceivedAt()).isNull();
         assertThat(b.completedToGradedMs()).isEqualTo(32_000L);
         assertThat(b.gradedAt().toString()).isEqualTo("2026-11-09T05:03:37Z");

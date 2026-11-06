@@ -19,7 +19,7 @@ public class BenchmarkRepository {
     private static final String SQL = """
             SELECT s.public_id, s.checkpoint_id, s.source, s.profile, s.booth_id, s.detection_model_version,
                    (SELECT count(*) FROM capture.photo p WHERE p.capture_set_id = s.id AND p.uploaded) AS photo_count,
-                   s.inference_ms, s.created_at, s.completed_at, s.detections_received_at,
+                   s.inference_ms, s.booth_total_ms, s.created_at, s.completed_at, s.detections_received_at,
                    g.created_at AS graded_at
               FROM capture.capture_set s
               LEFT JOIN inspection.grade_result g ON g.capture_set_id = s.id
@@ -46,12 +46,13 @@ public class BenchmarkRepository {
                 rs.getInt("photo_count"), rs.getObject("inference_ms", Integer.class),
                 rs.getObject("created_at", OffsetDateTime.class), rs.getObject("completed_at", OffsetDateTime.class),
                 rs.getObject("detections_received_at", OffsetDateTime.class),
-                rs.getObject("graded_at", OffsetDateTime.class));
+                rs.getObject("graded_at", OffsetDateTime.class), rs.getObject("booth_total_ms", Integer.class));
     }
 
     /** 세트 한 행. 없는 값은 null. */
     public record BenchmarkRow(String captureSetId, String checkpointId, String source, String profile, String boothId,
             String modelVersion, int photoCount, Integer inferenceMs, OffsetDateTime createdAt,
-            OffsetDateTime completedAt, OffsetDateTime detectionsReceivedAt, OffsetDateTime gradedAt) {
+            OffsetDateTime completedAt, OffsetDateTime detectionsReceivedAt, OffsetDateTime gradedAt,
+            Integer boothTotalMs) {
     }
 }
