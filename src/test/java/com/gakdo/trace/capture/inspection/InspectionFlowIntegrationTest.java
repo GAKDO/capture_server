@@ -166,7 +166,7 @@ class InspectionFlowIntegrationTest {
         String outDetections = "{\"modelVersion\":\"yolo11s-seg-v001-trt-fp16\",\"detections\":["
                 + detection("TOP", "CAM1", "scratch", 400, 400, 80) + ","
                 + detection("TOP", "CAM2", "scratch", 402, 401, 80) + ","
-                + detection("BOT", "CAM1", "stain", 600, 600, 60) + "],\"inferenceMs\":28400}";
+                + detection("BOT", "CAM1", "stain", 600, 600, 60) + "],\"inferenceMs\":28400,\"boothTotalMs\":91500}";
         mvc.perform(post("/api/v1/captures/sets/" + outSet + "/detections").with(booth())
                 .contentType(MediaType.APPLICATION_JSON).content(outDetections))
                 .andExpect(status().isCreated());
@@ -208,6 +208,7 @@ class InspectionFlowIntegrationTest {
         }
         assertThat(row).isNotNull();
         assertThat(row.get("inferenceMs").asInt()).isEqualTo(28400);
+        assertThat(row.get("boothTotalMs").asInt()).isEqualTo(91500);
         assertThat(row.get("modelVersion").asText()).isEqualTo("yolo11s-seg-v001-trt-fp16");
         assertThat(row.get("photoCount").asInt()).isEqualTo(BOOTH_FACES.size() * 2);
         assertThat(row.get("completedAt").isNull()).isFalse();

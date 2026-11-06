@@ -62,7 +62,7 @@ public class DetectionService {
     /** @return 저장한 탐지 수 */
     @Transactional
     public int save(Caller caller, String setId, String modelVersion, List<Detection> detections) {
-        return doSave(caller, setId, modelVersion, detections, null, null);
+        return doSave(caller, setId, modelVersion, detections, null, null, null);
     }
 
     /**
@@ -72,19 +72,26 @@ public class DetectionService {
     @Transactional
     public int save(Caller caller, String setId, String modelVersion, List<Detection> detections,
             List<PhotoRef> analyzed) {
-        return doSave(caller, setId, modelVersion, detections, analyzed, null);
+        return doSave(caller, setId, modelVersion, detections, analyzed, null, null);
     }
 
     /** inferenceMs는 부스 탐지 시간(선택, 11/6). 성능 그래프에 그대로 나간다. */
     @Transactional
     public int save(Caller caller, String setId, String modelVersion, List<Detection> detections,
             List<PhotoRef> analyzed, Integer inferenceMs) {
-        return doSave(caller, setId, modelVersion, detections, analyzed, inferenceMs);
+        return doSave(caller, setId, modelVersion, detections, analyzed, inferenceMs, null);
+    }
+
+    /** boothTotalMs는 부스 촬영 시작 버튼→판정 ms(선택, contracts #30). 성능 그래프에 그대로 나간다. */
+    @Transactional
+    public int save(Caller caller, String setId, String modelVersion, List<Detection> detections,
+            List<PhotoRef> analyzed, Integer inferenceMs, Integer boothTotalMs) {
+        return doSave(caller, setId, modelVersion, detections, analyzed, inferenceMs, boothTotalMs);
     }
 
     /** 두 save의 본문. 트랜잭션은 부른 public 메서드의 것을 쓴다(this로 @Transactional 메서드를 부르지 않기 위해 뺌). */
     private int doSave(Caller caller, String setId, String modelVersion, List<Detection> detections,
-            List<PhotoRef> analyzed, Integer inferenceMs) {
+            List<PhotoRef> analyzed, Integer inferenceMs, Integer boothTotalMs) {
         if (!caller.isBooth()) {
             throw new DomainException(ErrorCode.FORBIDDEN, "부스 토큰만 탐지 결과를 올릴 수 있습니다.");
         }
@@ -124,9 +131,9 @@ public class DetectionService {
             GradingService.place(saved, byPhoto);
         }
         defects.saveAll(saved);
-        set.markDetectionsReceived(modelVersion, inferenceMs);
-        log.info("부스 탐지 저장 set={} model={} 개수={} 탐지ms={} 상태={}", set.getPublicId(), modelVersion, saved.size(),
-                inferenceMs, set.getStatus());
+        set.markDetectionsReceived(modelVersion, inferenceMs, boothTotalMs);
+        log.info("부스 탐지 저장 set={} model={} 개수={} 탐지ms={} 부스전체ms={} 상태={}", set.getPublicId(), modelVersion,
+                saved.size(), inferenceMs, boothTotalMs, set.getStatus());
         grading.gradeIfReady(set);
         return saved.size();
     }

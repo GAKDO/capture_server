@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.gakdo.trace.capture.benchmark.application.BenchmarkService;
 import com.gakdo.trace.capture.benchmark.application.BenchmarkService.Benchmark;
+import com.gakdo.trace.capture.benchmark.application.ModelMetrics;
+import com.gakdo.trace.capture.benchmark.application.ModelMetrics.ModelMetric;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
 import com.gakdo.trace.capture.common.infra.Caller;
 
@@ -23,9 +25,11 @@ import jakarta.validation.constraints.Min;
 public class BenchmarkController {
 
     private final BenchmarkService benchmarks;
+    private final ModelMetrics models;
 
-    public BenchmarkController(BenchmarkService benchmarks) {
+    public BenchmarkController(BenchmarkService benchmarks, ModelMetrics models) {
         this.benchmarks = benchmarks;
+        this.models = models;
     }
 
     @GetMapping("/api/v1/captures/benchmarks")
@@ -33,9 +37,9 @@ public class BenchmarkController {
             @RequestParam(required = false) CaptureSource source,
             @RequestParam(defaultValue = "" + BenchmarkService.DEFAULT_LIMIT)
             @Min(1) @Max(BenchmarkService.MAX_LIMIT) int limit) {
-        return new BenchmarkList(benchmarks.recent(Caller.from(jwt), source, limit));
+        return new BenchmarkList(benchmarks.recent(Caller.from(jwt), source, limit), models.all());
     }
 
-    public record BenchmarkList(List<Benchmark> items) {
+    public record BenchmarkList(List<Benchmark> items, List<ModelMetric> models) {
     }
 }

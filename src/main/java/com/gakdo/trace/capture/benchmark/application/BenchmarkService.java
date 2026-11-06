@@ -41,7 +41,8 @@ public class BenchmarkService {
     static Benchmark toBenchmark(BenchmarkRow row) {
         return new Benchmark(row.captureSetId(), row.checkpointId(), row.source(), row.profile(), row.boothId(),
                 row.modelVersion(), row.photoCount(), row.inferenceMs(), utc(row.createdAt()), utc(row.completedAt()),
-                utc(row.detectionsReceivedAt()), utc(row.gradedAt()), millisBetween(row.completedAt(), row.gradedAt()));
+                utc(row.detectionsReceivedAt()), utc(row.gradedAt()), millisBetween(row.completedAt(), row.gradedAt()),
+                row.boothTotalMs());
     }
 
     /** 둘 중 하나라도 없거나 순서가 뒤집혔으면(재등급 등) null. */
@@ -59,6 +60,6 @@ public class BenchmarkService {
     public record Benchmark(String captureSetId, String checkpointId, String source, String profile, String boothId,
             String modelVersion, int photoCount, Integer inferenceMs, OffsetDateTime createdAt,
             OffsetDateTime completedAt, OffsetDateTime detectionsReceivedAt, OffsetDateTime gradedAt,
-            Long completedToGradedMs) {
+            Long completedToGradedMs, Integer boothTotalMs) {
     }
 }
