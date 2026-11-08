@@ -266,7 +266,9 @@ class InspectionFlowIntegrationTest {
         assertThat(texts(retEvent.get("newDefectIds")))
                 .containsExactly(retResult.get("defects").get(1).get("defectId").asText());
         // 1.1 핀: 묶음마다 하나, 신규 핀의 defectId는 newDefectIds와 같다
-        assertThat(retEvent.get("schemaVersion").asText()).isEqualTo("1.2");
+        assertThat(retEvent.get("schemaVersion").asText()).isEqualTo("1.3");
+        // 검수를 끈 설정(app.review.required=false)에서는 review를 싣지 않는다
+        assertThat(retEvent.has("review")).isFalse();
         assertThat(retEvent.get("compared").asBoolean()).isTrue();
         assertThat(retEvent.get("pins")).hasSize(2);
         List<String> newPins = new ArrayList<>();
