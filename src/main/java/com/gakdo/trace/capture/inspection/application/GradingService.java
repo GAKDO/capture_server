@@ -12,6 +12,8 @@ import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,8 @@ import com.gakdo.trace.capture.inspection.domain.CheckpointKind;
 import com.gakdo.trace.capture.inspection.domain.Defect;
 import com.gakdo.trace.capture.inspection.domain.DefectGroups;
 import com.gakdo.trace.capture.inspection.domain.DefectMatchRecord;
+import com.gakdo.trace.capture.inspection.domain.DefectSource;
+import com.gakdo.trace.capture.inspection.domain.ReviewStatus;
 import com.gakdo.trace.capture.inspection.domain.FaceAlignment;
 import com.gakdo.trace.capture.inspection.domain.GradeResult;
 import com.gakdo.trace.capture.inspection.domain.GradeRules;
@@ -49,6 +53,7 @@ import com.gakdo.trace.capture.inspection.infra.FaceAlignmentRepository;
 import com.gakdo.trace.capture.inspection.infra.GradeResultRepository;
 
 /**
+ * 사람 검수(11/8): AI 후보가 있는 세트는 관리자가 검수를 완료할 때까지 등급을 미루고, 기각(DISMISSED) 흠집은 등급·비교에서 뺀다.
  * 판정 불가 면 → 바로 앞 시점과 비교(C의 view-match-v1) → 같은 흠집 묶기 → 등급(grade-rules-v1) → 저장·이벤트.
  * 부르는 쪽이 세트 행을 잠근 트랜잭션 안에서 부른다(탐지 POST와 정합 이벤트가 동시에 와도 한 번만 매긴다).
  */
@@ -65,15 +70,73 @@ public class GradingService {
     private final FaceAlignmentRepository alignments;
     private final GradeResultRepository grades;
     private final GradeEventPublisher events;
+    private final boolean reviewRequired;
     private final ViewComparator comparator = new ViewComparator(RULE);
 
+    /** 검수 없이 바로 등급을 매긴다(검수 이전 동작, 단위 테스트용). */
     public GradingService(DefectRepository defects, DefectMatchRepository matches, FaceAlignmentRepository alignments,
             GradeResultRepository grades, GradeEventPublisher events) {
+        this(defects, matches, alignments, grades, events, false);
+    }
+
+    /** reviewRequired(app.review.required, 기본 true)가 false면 후보가 있어도 검수를 기다리지 않는다(검수 화면 배포 전 되돌리기용). */
+    @Autowired
+    public GradingService(DefectRepository defects, DefectMatchRepository matches, FaceAlignmentRepository alignments,
+            GradeResultRepository grades, GradeEventPublisher events,
+            @Value("${app.review.required:true}") boolean reviewRequired) {
         this.defects = defects;
         this.matches = matches;
         this.alignments = alignments;
         this.grades = grades;
         this.events = events;
+        this.reviewRequired = reviewRequired;
+    }
+
+    public boolean isReviewRequired() {
+        return reviewRequired;
+    }
+
+    /**
+     * 검수할 AI 후보: 모델이 낸(AUTO) 흠집 중 완료 때 올라갔고 건너뛰지 않은 면의 것. 전체 세트는 표준 좌표가 있어야 한다(정합하지 못한
+     * 사진의 흠집은 어차피 등급에 쓰지 않는다). 검수 대기 목록 SQL(ReviewQueueRepository)과 같은 조건이다.
+     */
+    public static List<Defect> reviewCandidates(CaptureSet set, List<Defect> all) {
+        Set<Face> skipped = set.getSkippedFaces().keySet();
+        return all.stream()
+                .filter(d -> d.getSource() == DefectSource.AUTO)
+                .filter(d -> d.getPhoto().isUploaded() && !skipped.contains(d.getPhoto().getFace()))
+                .filter(d -> set.isQuick() || d.getPolygon() != null)
+                .toList();
+    }
+
+    /** 후보가 있는데 아직 검수를 완료하지 않았으면 true(등급을 미룬다). */
+    private boolean awaitingReview(CaptureSet set, List<Defect> all) {
+        if (!reviewRequired || set.getReviewCompletedAt() != null) {
+            return false;
+        }
+        List<Defect> candidates = reviewCandidates(set, all);
+        if (candidates.isEmpty()) {
+            return false;
+        }
+        long pending = candidates.stream().filter(d -> d.getReviewStatus() == ReviewStatus.PENDING).count();
+        log.info("사람 검수를 기다립니다 set={} 후보={} 남은 것={}", set.getPublicId(), candidates.size(), pending);
+        return true;
+    }
+
+    /** 검수를 완료한 세트면 이벤트에 실을 검수 기록, 아니면 null(후보가 없던 세트·검수 끔). */
+    private static CheckpointGradedEvent.Review reviewOf(CaptureSet set, List<Defect> all) {
+        if (set.getReviewCompletedAt() == null) {
+            return null;
+        }
+        List<Defect> candidates = reviewCandidates(set, all);
+        int confirmed = (int) candidates.stream().filter(d -> d.getReviewStatus() == ReviewStatus.CONFIRMED).count();
+        int dismissed = (int) candidates.stream().filter(Defect::isDismissed).count();
+        return new CheckpointGradedEvent.Review(set.getReviewCompletedBy(), set.getReviewCompletedAt(), confirmed,
+                dismissed);
+    }
+
+    private static List<Defect> notDismissed(List<Defect> all) {
+        return all.stream().filter(d -> !d.isDismissed()).toList();
     }
 
     /**
@@ -105,7 +168,11 @@ public class GradingService {
             return false;
         }
 
-        List<Defect> current = usable(defects.findBySet(set), judgeable);
+        List<Defect> all = defects.findBySet(set);
+        if (awaitingReview(set, all)) {
+            return false;
+        }
+        List<Defect> current = usable(all, judgeable);
         // 빠른 검사 결과는 표준 좌표 흠집이 없어 비교할 수 없으므로 전체 세트 결과만 앞 시점으로 쓴다.
         Optional<GradeResult> previous = grades
                 .findFirstByCaptureSetRentalIdAndCaptureSetProfileAndCheckpointIdNotOrderByUpdatedAtDesc(
@@ -146,7 +213,7 @@ public class GradingService {
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
                 outcome.ruleVersion(), newIds, unjudgeableFaces, photoHashes(set), pins(groups, currentById, newIds),
-                previous.isPresent()));
+                previous.isPresent(), reviewOf(set, all)));
         if (log.isInfoEnabled()) {
             log.info("등급 set={} checkpoint={} type={} grade={} 신규={} 판정불가={} 비교={}", set.getPublicId(),
                     set.getCheckpointId(), kind, outcome.grade(), newIds.size(), unjudgeableFaces,
@@ -179,7 +246,11 @@ public class GradingService {
             return false;
         }
 
-        List<DefectGroups.Group> groups = quickGroups(defects.findBySet(set), uploaded);
+        List<Defect> all = defects.findBySet(set);
+        if (awaitingReview(set, all)) {
+            return false;
+        }
+        List<DefectGroups.Group> groups = quickGroups(notDismissed(all), uploaded);
         Optional<GradeResult> previous = grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(
                 set.getRentalId(), set.getCheckpointId());
         boolean baseline = previous.isEmpty();
@@ -198,7 +269,8 @@ public class GradingService {
         CheckpointKind kind = kindOf(set, result);
         events.publishGraded(new CheckpointGradedEvent(CheckpointGradedEvent.SCHEMA_VERSION, PublicIds.next(),
                 Times.now(), set.getRentalId(), set.getCheckpointId(), set.getPublicId(), kind, outcome.grade(),
-                outcome.ruleVersion(), List.of(), unjudgeableFaces, photoHashes(set), List.of(), false));
+                outcome.ruleVersion(), List.of(), unjudgeableFaces, photoHashes(set), List.of(), false,
+                reviewOf(set, all)));
         log.info("빠른 검사 등급 set={} checkpoint={} grade={} 흠집={} 판정불가={}", set.getPublicId(),
                 set.getCheckpointId(), outcome.grade(), groups.size(), unjudgeableFaces);
         return true;
@@ -246,7 +318,7 @@ public class GradingService {
         Set<Face> prevFaces = EnumSet.noneOf(Face.class);
         prevSet.getPhotos().stream().filter(Photo::isUploaded).forEach(p -> prevFaces.add(p.getFace()));
         prevFaces.removeAll(prevSet.getSkippedFaces().keySet());
-        long before = countNonStain(quickGroups(defects.findBySet(prevSet), prevFaces));
+        long before = countNonStain(quickGroups(notDismissed(defects.findBySet(prevSet)), prevFaces));
         long now = countNonStain(current);
         long diff = now - before;
         String change = diff > 0 ? diff + "개 늘어남" : diff < 0 ? (-diff) + "개 줄어듦" : "같음";
@@ -264,10 +336,11 @@ public class GradingService {
                 .toList();
     }
 
-    /** 표준 좌표가 있고 판정 가능 면에 있는 흠집만 비교·등급에 쓴다. */
+    /** 표준 좌표가 있고 판정 가능 면에 있으며 사람이 기각하지 않은 흠집만 비교·등급에 쓴다. */
     private static List<Defect> usable(List<Defect> all, Set<Face> judgeable) {
         return all.stream()
                 .filter(d -> d.getPolygon() != null && judgeable.contains(d.getPhoto().getFace()))
+                .filter(d -> !d.isDismissed())
                 .toList();
     }
 

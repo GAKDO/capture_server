@@ -104,6 +104,10 @@ public class GradeResult {
         return createdAt;
     }
 
+    public OffsetDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
     public List<Face> getUnjudgeableFaces() {
         return unjudgeableFaces;
     }

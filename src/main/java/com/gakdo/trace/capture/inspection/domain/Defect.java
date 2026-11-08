@@ -71,6 +71,20 @@ public class Defect {
     @Column(nullable = false, updatable = false, length = 8)
     private DefectSource source;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "review_status", nullable = false, length = 10)
+    private ReviewStatus reviewStatus = ReviewStatus.PENDING;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dismiss_reason", length = 12)
+    private DismissReason dismissReason;
+
+    @Column(name = "reviewed_by", length = 64)
+    private String reviewedBy;
+
+    @Column(name = "reviewed_at")
+    private OffsetDateTime reviewedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -129,6 +143,27 @@ public class Defect {
         this.updatedAt = Times.now();
     }
 
+    /**
+     * 사람 검수(11/8). DISMISSED에는 사유가 꼭 있고 다른 결정에는 없다. PENDING(되돌리기)은 검수자·시각도 지운다.
+     *
+     * @throws IllegalArgumentException 사유 규칙을 어기면
+     */
+    public void review(ReviewStatus status, DismissReason reason, String by, OffsetDateTime at) {
+        if ((status == ReviewStatus.DISMISSED) != (reason != null)) {
+            throw new IllegalArgumentException("기각(DISMISSED)에만 사유가 있습니다: " + status + "/" + reason);
+        }
+        this.reviewStatus = status;
+        this.dismissReason = reason;
+        this.reviewedBy = status == ReviewStatus.PENDING ? null : by;
+        this.reviewedAt = status == ReviewStatus.PENDING ? null : at;
+        this.updatedAt = at;
+    }
+
+    /** 등급·비교에 쓰지 않는 흠집(사람이 흠집 아님으로 정함). */
+    public boolean isDismissed() {
+        return reviewStatus == ReviewStatus.DISMISSED;
+    }
+
     /** real(float4) 값을 그 십진 표기 그대로 double로(10.05f → 10.05, 10.050000190… 아님). */
     private static Double widen(Float v) {
         return v == null ? null : Double.parseDouble(v.toString());
@@ -180,5 +215,21 @@ public class Defect {
 
     public DefectSource getSource() {
         return source;
+    }
+
+    public ReviewStatus getReviewStatus() {
+        return reviewStatus;
+    }
+
+    public DismissReason getDismissReason() {
+        return dismissReason;
+    }
+
+    public String getReviewedBy() {
+        return reviewedBy;
+    }
+
+    public OffsetDateTime getReviewedAt() {
+        return reviewedAt;
     }
 }

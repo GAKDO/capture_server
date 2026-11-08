@@ -56,7 +56,7 @@ import com.gakdo.trace.capture.support.FakePhotoStorage;
  * 실제 PostgreSQL(Flyway V1·V2)·RabbitMQ로 출고 → 수령 → 반납을 돌린다. 사진 저장소만 메모리(사전 서명은 CaptureIntegrationTest).
  * inspect-worker 대신 시험이 trace.inspect.completed를 trace.events에 낸다. Docker가 없으면 건너뛴다.
  */
-@SpringBootTest
+@SpringBootTest(properties = "app.review.required=false") // 검수 없이 바로 등급(검수 흐름은 ReviewFlowIntegrationTest)
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class InspectionFlowIntegrationTest {

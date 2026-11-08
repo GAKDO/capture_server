@@ -103,6 +103,15 @@ public class CaptureSet {
     @Column(name = "booth_total_ms")
     private Integer boothTotalMs;
 
+    @Column(name = "review_completed_at")
+    private OffsetDateTime reviewCompletedAt;
+
+    @Column(name = "review_completed_by", length = 64)
+    private String reviewCompletedBy;
+
+    @Column(name = "review_completion_key", length = 128)
+    private String reviewCompletionKey;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -265,6 +274,29 @@ public class CaptureSet {
         this.status = SetStatus.GRADED;
         this.quality = Quality.OK;
         this.updatedAt = Times.now();
+    }
+
+    /** 사람 검수 완료(11/8). 이 뒤로 등급을 매길 수 있고 결정·부스 탐지는 바꿀 수 없다. key는 Idempotency-Key. */
+    public void completeReview(String by, String key) {
+        if (reviewCompletedAt != null) {
+            throw new IllegalStateException("이미 검수를 완료한 세트입니다: " + publicId);
+        }
+        this.reviewCompletedAt = Times.now();
+        this.reviewCompletedBy = by;
+        this.reviewCompletionKey = key;
+        this.updatedAt = reviewCompletedAt;
+    }
+
+    public OffsetDateTime getReviewCompletedAt() {
+        return reviewCompletedAt;
+    }
+
+    public String getReviewCompletedBy() {
+        return reviewCompletedBy;
+    }
+
+    public String getReviewCompletionKey() {
+        return reviewCompletionKey;
     }
 
     public OffsetDateTime getCompletedAt() {

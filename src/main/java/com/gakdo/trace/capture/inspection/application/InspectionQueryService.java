@@ -1,5 +1,7 @@
 package com.gakdo.trace.capture.inspection.application;
 
+import java.time.OffsetDateTime;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +19,10 @@ import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.common.domain.DomainException;
 import com.gakdo.trace.capture.common.domain.ErrorCode;
+import com.gakdo.trace.capture.captureset.domain.Photo;
 import com.gakdo.trace.capture.common.infra.Caller;
+import com.gakdo.trace.capture.inspection.domain.Defect;
+import com.gakdo.trace.capture.inspection.domain.DefectGroups;
 import com.gakdo.trace.capture.inspection.domain.DefectMatchRecord;
 import com.gakdo.trace.capture.inspection.domain.GradeResult;
 import com.gakdo.trace.capture.inspection.infra.DefectMatchRepository;
@@ -27,6 +32,7 @@ import com.gakdo.trace.capture.inspection.infra.GradeResultRepository;
 /**
  * 시점의 흠집·매칭·등급(contracts getCheckpointInspection). 등급이 있으면 그 세트, 없으면 시점의 가장 최근 세트를 보여 준다.
  * 범위: ADMIN은 모두, 일반 고객은 rentals 클레임의 본인 렌탈만(gateway는 경로에 rentalId가 없어 볼 수 없다).
+ * 사람 검수(11/8): ADMIN에게는 기각(DISMISSED) 흠집까지 review와 함께 보내고, 고객에게는 기각 흠집을 뺀다.
  */
 @Service
 public class InspectionQueryService {
@@ -47,18 +53,36 @@ public class InspectionQueryService {
     /** photoDefects는 계약의 선택 필드(11/3)라 빠른 검사 세트일 때만 싣는다(그때 defects는 빈 배열). */
     public record InspectionView(String checkpointId, String grade, String ruleVersion, List<String> reasons,
             List<DefectView> defects,
-            @JsonInclude(JsonInclude.Include.NON_NULL) List<PhotoDefectView> photoDefects) {
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<PhotoDefectView> photoDefects, ReviewSummary review) {
     }
 
     /** polygon은 늘 표준 좌표 px. */
     public record DefectView(String defectId, String face, @JsonProperty("class") String defectClass, List<List<Double>> polygon,
-            Double lengthMm, Double areaMm2, double confidence, String modelVersion, String source, MatchView match) {
+            Double lengthMm, Double areaMm2, double confidence, String modelVersion, String source, MatchView match,
+            ReviewView review) {
     }
 
-    /** 빠른 검사 흠집: 원본 사진 px. 어느 사진인지는 face·light·camera로 찾는다(민서 11/3 결정: 별도 칸). */
+    /**
+     * 빠른 검사 흠집: 원본 사진 px. 어느 사진인지는 face·light·camera로 찾는다(민서 11/3 결정: 별도 칸).
+     * groupId는 같은 면·카메라에서 겹치는 흠집 묶음의 대표 defectId(등급 계산의 묶기와 같다, 11/8).
+     */
     public record PhotoDefectView(String defectId, String face, String light, String camera,
             @JsonProperty("class") String defectClass, List<List<Double>> polygon, double confidence,
-            String modelVersion) {
+            String modelVersion, String groupId, ReviewView review) {
+    }
+
+    /** 흠집 하나의 검수 상태(contracts DefectReview). 값이 없으면 null을 그대로 싣는다(계약 required). */
+    public record ReviewView(String status, String reason, String reviewedBy, OffsetDateTime reviewedAt) {
+
+        static ReviewView of(Defect d) {
+            return new ReviewView(d.getReviewStatus().name(),
+                    d.getDismissReason() == null ? null : d.getDismissReason().name(), d.getReviewedBy(),
+                    d.getReviewedAt());
+        }
+    }
+
+    /** 시점의 검수 요약(contracts InspectionReview). 후보가 없던 세트는 모두 0이고 completedAt은 등급 시각. */
+    public record ReviewSummary(int pending, int confirmed, int dismissed, OffsetDateTime completedAt) {
     }
 
     public record MatchView(String status, String prevDefectId, Double distanceMm) {
@@ -90,27 +114,70 @@ public class InspectionQueryService {
 
         Map<Long, DefectMatchRecord> byDefect = new HashMap<>();
         matches.findBySet(set).forEach(m -> byDefect.put(m.getDefect().getId(), m));
+        List<Defect> all = defects.findBySet(set);
+        ReviewSummary review = summary(set, all, grade);
+        // 고객에게는 사람이 흠집 아님으로 정한 후보를 보이지 않는다
+        List<Defect> shown = caller.isAdmin() ? all : all.stream().filter(d -> !d.isDismissed()).toList();
         if (set.isQuick()) {
             // 미디어 조회(/media)와 같은 공개 범위: 완료 때 올라간 사진만, 건너뛴 면은 뺀다(등급 계산과 같음).
             Set<Face> skipped = set.getSkippedFaces().keySet();
-            List<PhotoDefectView> photo = defects.findBySet(set).stream()
+            List<Defect> visible = shown.stream()
                     .filter(d -> d.getPhoto().isUploaded() && !skipped.contains(d.getPhoto().getFace()))
+                    .toList();
+            Map<String, String> groupOf = groupIds(set, visible);
+            List<PhotoDefectView> photo = visible.stream()
                     .map(d -> new PhotoDefectView(d.getPublicId(), d.getPhoto().getFace().name(),
                             d.getPhoto().getLight().name(), d.getPhoto().getCamera().name(), d.getDefectClass().code(),
-                            d.getPhotoPolygon(), d.getConfidence(), d.getModelVersion()))
+                            d.getPhotoPolygon(), d.getConfidence(), d.getModelVersion(),
+                            groupOf.getOrDefault(d.getPublicId(), d.getPublicId()), ReviewView.of(d)))
                     .toList();
-            return view(checkpointId, grade, List.of(), photo);
+            return view(checkpointId, grade, List.of(), photo, review);
         }
-        List<DefectView> list = defects.findBySet(set).stream()
+        List<DefectView> list = shown.stream()
                 .filter(d -> d.getPolygon() != null)
                 .map(d -> {
                     MatchView match = matchView(byDefect.get(d.getId()));
                     return new DefectView(d.getPublicId(), d.getPhoto().getFace().name(), d.getDefectClass().code(),
                             d.getPolygon(), d.getLengthMm(), d.getAreaMm2(), d.getConfidence(), d.getModelVersion(),
-                            d.getSource().name(), match);
+                            d.getSource().name(), match, ReviewView.of(d));
                 })
                 .toList();
-        return view(checkpointId, grade, list, null);
+        return view(checkpointId, grade, list, null, review);
+    }
+
+    /** 흠집 id → 같은 면·카메라에서 겹치는 묶음의 대표 id(첫 흠집). 등급 계산(GradingService.quickGroups)과 같은 묶기. */
+    static Map<String, String> groupIds(CaptureSet set, List<Defect> list) {
+        Set<Face> faces = EnumSet.noneOf(Face.class);
+        set.getPhotos().stream().filter(Photo::isUploaded).forEach(p -> faces.add(p.getFace()));
+        Map<String, String> out = new HashMap<>();
+        for (DefectGroups.Group g : GradingService.quickGroups(list, faces)) {
+            String head = g.defectIds().get(0);
+            g.defectIds().forEach(id -> out.put(id, head));
+        }
+        return out;
+    }
+
+    /** 검수 요약: 후보(GradingService.reviewCandidates) 수와 완료 시각. 검수 없이 등급이 났으면 등급 시각을 완료 시각으로 둔다. */
+    static ReviewSummary summary(CaptureSet set, List<Defect> all, Optional<GradeResult> grade) {
+        List<Defect> candidates = GradingService.reviewCandidates(set, all);
+        int pending = 0;
+        int confirmed = 0;
+        int dismissed = 0;
+        for (Defect d : candidates) {
+            switch (d.getReviewStatus()) {
+                case PENDING -> pending++;
+                case CONFIRMED -> confirmed++;
+                case DISMISSED -> dismissed++;
+            }
+        }
+        OffsetDateTime completedAt = set.getReviewCompletedAt();
+        boolean gradedThisSet = grade.map(g -> g.getCaptureSet() != null
+                && java.util.Objects.equals(set.getId(), g.getCaptureSet().getId()))
+                .orElse(false);
+        if (completedAt == null && gradedThisSet) {
+            completedAt = grade.get().getUpdatedAt();
+        }
+        return new ReviewSummary(pending, confirmed, dismissed, completedAt);
     }
 
     /** 앞 시점 흠집과의 대응. 대응 기록이 없으면 null, 앞 흠집이 없으면(신규) prevDefectId가 null. */
@@ -123,9 +190,9 @@ public class InspectionQueryService {
     }
 
     private static InspectionView view(String checkpointId, Optional<GradeResult> grade, List<DefectView> list,
-            List<PhotoDefectView> photo) {
+            List<PhotoDefectView> photo, ReviewSummary review) {
         return grade.map(g -> new InspectionView(checkpointId, g.getGrade().name(), g.getRuleVersion(),
-                g.getReasons(), list, photo))
-                .orElseGet(() -> new InspectionView(checkpointId, null, null, List.of(), list, photo));
+                g.getReasons(), list, photo, review))
+                .orElseGet(() -> new InspectionView(checkpointId, null, null, List.of(), list, photo, review));
     }
 }
