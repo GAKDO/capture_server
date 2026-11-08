@@ -19,6 +19,13 @@ public interface CaptureSetRepository extends JpaRepository<CaptureSet, Long> {
 
     Optional<CaptureSet> findByPublicId(String publicId);
 
+    /** 같은 시점의 세트 만들기를 트랜잭션 동안 직렬화한다(PostgreSQL advisory lock). 짝 확인과 저장 사이에 다른 렌탈이 끼지 않게. */
+    @Query(value = "SELECT 1 FROM pg_advisory_xact_lock(hashtext(:checkpointId))", nativeQuery = true)
+    Integer lockCheckpoint(@org.springframework.data.repository.query.Param("checkpointId") String checkpointId);
+
+    /** 이 시점에 다른 렌탈로 만든 세트가 있는지(시점과 렌탈 짝 확인). */
+    boolean existsByCheckpointIdAndRentalIdNot(String checkpointId, String rentalId);
+
     /** 시점의 가장 최근 세트(검사 결과 조회, CA2). */
     Optional<CaptureSet> findFirstByCheckpointIdOrderByIdDesc(String checkpointId);
 

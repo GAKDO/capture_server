@@ -95,6 +95,9 @@ class CaptureSetApiTest extends WebTestBase {
         when(repository.findForUpdate(anyString())).thenAnswer(inv -> Optional.ofNullable(saved.get(inv.getArgument(0))));
         when(repository.findByPublicId(anyString()))
                 .thenAnswer(inv -> Optional.ofNullable(saved.get(inv.getArgument(0))));
+        when(repository.existsByCheckpointIdAndRentalIdNot(anyString(), anyString())).thenAnswer(inv -> saved.values()
+                .stream().anyMatch(s -> s.getCheckpointId().equals(inv.getArgument(0))
+                        && !s.getRentalId().equals(inv.getArgument(1))));
     }
 
     // ── 이야기 1: 세트 생성 ──
@@ -182,6 +185,18 @@ class CaptureSetApiTest extends WebTestBase {
         perform(post("/api/v1/captures/sets").with(capture()),
                 setBody(RENTAL, CHECKPOINT, "BOOTH", List.of(photo("TOP", "L1", "CAM1"))))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("OUT_OF_SCOPE"));
+    }
+
+    @Test
+    @DisplayName("이미 다른 렌탈로 세트가 있는 시점에 부스가 다른 렌탈로 세트를 만들면 403 OUT_OF_SCOPE, 같은 렌탈 재촬영은 된다")
+    void boothCheckpointRentalPair() throws Exception {
+        created(booth(), boothBody(List.of()));
+        String mismatched = boothBody(List.of()).replace("\"rentalId\":\"" + RENTAL + "\"",
+                "\"rentalId\":\"" + OTHER_RENTAL + "\"");
+        assertThat(mismatched).contains(OTHER_RENTAL);
+        perform(post("/api/v1/captures/sets").with(booth()), mismatched)
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("OUT_OF_SCOPE"));
+        created(booth(), boothBody(List.of()));
     }
 
     @Test

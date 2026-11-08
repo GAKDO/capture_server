@@ -112,6 +112,12 @@ public class CaptureSetService {
                 || !rentalId.equals(caller.rentalId())) {
             throw Caller.outOfScope();
         }
+        // 부스 토큰은 렌탈·시점 범위가 없어 본문의 짝을 그대로 믿었다. 같은 시점에 다른 렌탈로 세트를 만들면
+        // 그 시점의 등급과 리포트 소속(report-server)이 다른 렌탈로 바뀌므로, 한 시점은 처음 세트의 렌탈하고만 짝을 이룬다
+        sets.lockCheckpoint(checkpointId);
+        if (sets.existsByCheckpointIdAndRentalIdNot(checkpointId, rentalId)) {
+            throw Caller.outOfScope();
+        }
 
         CaptureSet set = CaptureSet.open(rentalId, checkpointId, source, boothId, device, profile,
                 photos.stream().map(NewPhoto::spec).toList());
