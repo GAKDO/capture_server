@@ -122,7 +122,7 @@ class ReviewGradingTest {
         Defect dust = dent(set, Face.TOP);
         Defect real = scratch(set, Face.BOT);
         when(defects.findBySet(set)).thenReturn(List.of(dust, real));
-        when(sets.findFirstByCheckpointIdOrderByIdDesc(set.getCheckpointId())).thenReturn(Optional.of(set));
+        when(sets.findLatestPublicIdByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(set.getPublicId()));
         when(sets.findForUpdate(set.getPublicId())).thenReturn(Optional.of(set));
 
         reviews.save(ADMIN, ADMIN_ID, set.getCheckpointId(), List.of(
@@ -146,7 +146,7 @@ class ReviewGradingTest {
     void completeWithPendingIs409() {
         CaptureSet set = readySet();
         when(defects.findBySet(set)).thenReturn(List.of(scratch(set, Face.TOP), scratch(set, Face.BOT)));
-        when(sets.findFirstByCheckpointIdOrderByIdDesc(set.getCheckpointId())).thenReturn(Optional.of(set));
+        when(sets.findLatestPublicIdByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(set.getPublicId()));
         when(sets.findForUpdate(set.getPublicId())).thenReturn(Optional.of(set));
 
         assertThatThrownBy(() -> reviews.complete(ADMIN, ADMIN_ID, set.getCheckpointId(), "review-key-0001"))
@@ -161,7 +161,7 @@ class ReviewGradingTest {
     @DisplayName("부스 탐지가 오기 전에는 검수 완료가 409 REVIEW_NOT_READY, 후보 없는 세트는 409 REVIEW_CLOSED")
     void notReadyOrNoCandidates() {
         CaptureSet waiting = completedSet(Map.of());
-        when(sets.findFirstByCheckpointIdOrderByIdDesc(waiting.getCheckpointId())).thenReturn(Optional.of(waiting));
+        when(sets.findLatestPublicIdByCheckpointId(waiting.getCheckpointId())).thenReturn(Optional.of(waiting.getPublicId()));
         when(sets.findForUpdate(waiting.getPublicId())).thenReturn(Optional.of(waiting));
         assertThatThrownBy(() -> reviews.complete(ADMIN, ADMIN_ID, waiting.getCheckpointId(), "review-key-0001"))
                 .isInstanceOfSatisfying(DomainException.class,
@@ -181,7 +181,7 @@ class ReviewGradingTest {
         Defect d = scratch(set, Face.TOP);
         d.review(ReviewStatus.CONFIRMED, null, ADMIN_ID, Times.now());
         when(defects.findBySet(set)).thenReturn(List.of(d));
-        when(sets.findFirstByCheckpointIdOrderByIdDesc(set.getCheckpointId())).thenReturn(Optional.of(set));
+        when(sets.findLatestPublicIdByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(set.getPublicId()));
         when(sets.findForUpdate(set.getPublicId())).thenReturn(Optional.of(set));
 
         reviews.complete(ADMIN, ADMIN_ID, set.getCheckpointId(), "review-key-0001");
@@ -203,7 +203,7 @@ class ReviewGradingTest {
         CaptureSet set = readySet();
         Defect d = scratch(set, Face.TOP);
         when(defects.findBySet(set)).thenReturn(List.of(d));
-        when(sets.findFirstByCheckpointIdOrderByIdDesc(set.getCheckpointId())).thenReturn(Optional.of(set));
+        when(sets.findLatestPublicIdByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(set.getPublicId()));
         when(sets.findForUpdate(set.getPublicId())).thenReturn(Optional.of(set));
 
         assertThatThrownBy(() -> reviews.save(ADMIN, ADMIN_ID, set.getCheckpointId(), List.of(
