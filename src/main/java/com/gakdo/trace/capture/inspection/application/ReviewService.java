@@ -159,8 +159,8 @@ public class ReviewService {
     }
 
     private CaptureSet lockLatest(String checkpointId) {
-        String setId = sets.findFirstByCheckpointIdOrderByIdDesc(checkpointId)
-                .map(CaptureSet::getPublicId)
+        // 엔티티를 먼저 읽으면 잠금 뒤에도 영속성 컨텍스트의 옛 상태를 보므로 ID만 찾고 잠가서 읽는다
+        String setId = sets.findLatestPublicIdByCheckpointId(checkpointId)
                 .orElseThrow(() -> DomainException.notFound("시점의 촬영 세트"));
         return sets.findForUpdate(setId).orElseThrow(() -> DomainException.notFound("시점의 촬영 세트"));
     }
