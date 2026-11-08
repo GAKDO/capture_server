@@ -38,7 +38,7 @@ class ReviewOffGraderTest {
         when(grading.isReviewRequired()).thenReturn(true);
 
         assertThat(grader.gradeStuck()).isZero();
-        verify(sets, never()).findStuckInReview(any(), any(), any(), any());
+        verify(sets, never()).findStuckInReview(any(), any(), any());
     }
 
     @Test
@@ -48,7 +48,7 @@ class ReviewOffGraderTest {
         CaptureSet broken = mock(CaptureSet.class);
         CaptureSet ok = mock(CaptureSet.class);
         CaptureSet notReady = mock(CaptureSet.class);
-        when(sets.findStuckInReview(any(), any(), any(), any())).thenReturn(List.of("a", "b", "c", "gone"));
+        when(sets.findStuckInReview(any(), any(), any())).thenReturn(List.of("a", "b", "c", "gone"));
         when(sets.findForUpdate("a")).thenReturn(Optional.of(broken));
         when(sets.findForUpdate("b")).thenReturn(Optional.of(ok));
         when(sets.findForUpdate("c")).thenReturn(Optional.of(notReady));

@@ -14,7 +14,6 @@ import com.gakdo.trace.capture.captureset.domain.Quality;
 import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.inspection.domain.DefectSource;
-import com.gakdo.trace.capture.inspection.domain.ReviewStatus;
 
 /**
  * 검수를 끄고(REVIEW_REQUIRED=false) 다시 띄우면, 검수를 기다리던 세트에 바로 등급을 매긴다.
@@ -47,7 +46,7 @@ public class ReviewOffGrader {
             return 0;
         }
         List<String> ids = sets.findStuckInReview(EnumSet.of(SetStatus.UPLOADED, SetStatus.INSPECTED),
-                Quality.UNJUDGEABLE, DefectSource.AUTO, ReviewStatus.PENDING);
+                Quality.UNJUDGEABLE, DefectSource.AUTO);
         if (ids.isEmpty()) {
             return 0;
         }
