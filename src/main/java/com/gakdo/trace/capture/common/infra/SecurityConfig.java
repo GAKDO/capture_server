@@ -44,6 +44,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/ping").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/health", "/actuator/info").permitAll()
+                        // 공개 보유 기기 목록·상세(11/8): 로그인 없이. 부스·등급 난 세트의 확정 흠집만 서비스가 거른다
+                        .requestMatchers(HttpMethod.GET, "/api/v1/captures/catalog", "/api/v1/captures/catalog/checkpoints/*").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/captures/sets", "/api/v1/captures/sets/*/uploads",
                                 "/api/v1/captures/sets/*/complete")
                         .hasAnyRole(BOOTH, CUSTOMER)
