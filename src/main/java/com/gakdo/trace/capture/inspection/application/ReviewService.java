@@ -132,7 +132,7 @@ public class ReviewService {
     /** 등급을 매길 재료가 다 왔나(GradingService의 준비 조건과 같다). */
     static boolean ready(CaptureSet set) {
         if (set.isQuick()) {
-            return set.getStatus() == SetStatus.UPLOADED && set.getDetectionsReceivedAt() != null;
+            return set.isQuickGradable() && set.getDetectionsReceivedAt() != null;
         }
         return set.getStatus() == SetStatus.INSPECTED
                 && (set.getSource() != CaptureSource.BOOTH || set.getDetectionsReceivedAt() != null);

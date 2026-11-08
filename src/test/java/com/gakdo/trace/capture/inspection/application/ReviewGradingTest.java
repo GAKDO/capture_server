@@ -175,6 +175,24 @@ class ReviewGradingTest {
     }
 
     @Test
+    @DisplayName("검수를 기다리는 사이 정합 결과가 와서 INSPECTED가 된 빠른 검사 세트도 검수 완료로 등급이 난다")
+    void quickSetInspectedWhileWaitingStillGrades() {
+        CaptureSet set = readySet();
+        Defect d = scratch(set, Face.TOP);
+        when(defects.findBySet(set)).thenReturn(List.of(d));
+        assertThat(grading.gradeIfReady(set)).isFalse();
+        set.markInspected();
+        d.review(ReviewStatus.CONFIRMED, null, ADMIN_ID, Times.now());
+        when(sets.findLatestPublicIdByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(set.getPublicId()));
+        when(sets.findForUpdate(set.getPublicId())).thenReturn(Optional.of(set));
+
+        reviews.complete(ADMIN, ADMIN_ID, set.getCheckpointId(), "review-key-0003");
+
+        assertThat(set.getStatus()).isEqualTo(SetStatus.GRADED);
+        assertThat(sent().grade()).isEqualTo(Grade.B);
+    }
+
+    @Test
     @DisplayName("같은 Idempotency-Key로 다시 완료하면 다시 매기지 않고, 다른 키면 409 REVIEW_CLOSED. 완료 뒤 결정 저장도 409")
     void completeIsIdempotent() {
         CaptureSet set = readySet();

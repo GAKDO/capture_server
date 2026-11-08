@@ -256,9 +256,17 @@ public class CaptureSet {
         this.updatedAt = Times.now();
     }
 
-    /** 빠른 검사 세트를 정합 없이 등급 매겼다(11/3 MVP): UPLOADED → GRADED. 이후 부스 탐지는 409. */
+    /**
+     * 빠른 검사 세트를 정합 없이 등급 매길 수 있는 상태인가. 완료(UPLOADED)가 기본이고, 사람 검수를 기다리는 사이
+     * inspect-worker가 정합 결과를 보내 INSPECTED가 된 세트도 포함한다(11/8, 빠른 검사는 정합을 쓰지 않음).
+     */
+    public boolean isQuickGradable() {
+        return isQuick() && (status == SetStatus.UPLOADED || status == SetStatus.INSPECTED);
+    }
+
+    /** 빠른 검사 세트를 정합 없이 등급 매겼다(11/3 MVP): UPLOADED(또는 검수 대기 중 INSPECTED) → GRADED. 이후 부스 탐지는 409. */
     public void markGradedQuick() {
-        if (profile != CaptureProfile.QUICK || status != SetStatus.UPLOADED) {
+        if (!isQuickGradable()) {
             throw new IllegalStateException("완료된 빠른 검사 세트만 정합 없이 등급을 매긴다: " + profile + "/" + status);
         }
         this.status = SetStatus.GRADED;

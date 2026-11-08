@@ -224,11 +224,12 @@ public class GradingService {
 
     /**
      * 빠른 검사(QUICK, 11/3 MVP): 완료(UPLOADED)와 부스 탐지가 둘 다 있으면 정합 없이 등급을 매긴다.
+     * 사람 검수를 기다리는 동안 inspect-worker 정합이 와서 INSPECTED가 됐어도 매긴다(정합은 쓰지 않음).
      * 흠집은 원본 사진 px라 거리로 묶지 않고 하나씩 세며(길이 모름), 앞 시점과 비교하지 않는다. 판정 불가 면은 올라가지 않았거나
      * 건너뛴 면이다. 핀은 표준 좌표가 없어 싣지 않는다.
      */
     boolean gradeQuickIfReady(CaptureSet set) {
-        if (set.getStatus() != SetStatus.UPLOADED) {
+        if (!set.isQuickGradable()) {
             return false;
         }
         if (set.getDetectionsReceivedAt() == null) {
