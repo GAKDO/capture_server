@@ -56,7 +56,7 @@ import com.gakdo.trace.capture.support.FakePhotoStorage;
  * 실제 PostgreSQL(Flyway V1·V2)·RabbitMQ로 출고 → 수령 → 반납을 돌린다. 사진 저장소만 메모리(사전 서명은 CaptureIntegrationTest).
  * inspect-worker 대신 시험이 trace.inspect.completed를 trace.events에 낸다. Docker가 없으면 건너뛴다.
  */
-@SpringBootTest
+@SpringBootTest(properties = "app.review.required=false") // 검수 없이 바로 등급(검수 흐름은 ReviewFlowIntegrationTest)
 @AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 class InspectionFlowIntegrationTest {
@@ -266,7 +266,9 @@ class InspectionFlowIntegrationTest {
         assertThat(texts(retEvent.get("newDefectIds")))
                 .containsExactly(retResult.get("defects").get(1).get("defectId").asText());
         // 1.1 핀: 묶음마다 하나, 신규 핀의 defectId는 newDefectIds와 같다
-        assertThat(retEvent.get("schemaVersion").asText()).isEqualTo("1.2");
+        assertThat(retEvent.get("schemaVersion").asText()).isEqualTo("1.3");
+        // 검수를 끈 설정(app.review.required=false)에서는 review를 싣지 않는다
+        assertThat(retEvent.has("review")).isFalse();
         assertThat(retEvent.get("compared").asBoolean()).isTrue();
         assertThat(retEvent.get("pins")).hasSize(2);
         List<String> newPins = new ArrayList<>();

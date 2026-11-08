@@ -73,6 +73,9 @@ app:
   # 예: yolo11s-seg-v001-trt-fp16=0.71/0.48. 모르는 값은 - (null). 비우면 빈 목록
   benchmark:
     model-metrics: ${MODEL_METRICS:}
+  # 사람 검수(11/8): AI 후보가 있는 세트는 관리자가 검수를 완료한 뒤 등급을 매긴다. false면 검수 없이 바로 등급(이전 동작)
+  review:
+    required: ${REVIEW_REQUIRED:true}
 
 management:
   endpoints:

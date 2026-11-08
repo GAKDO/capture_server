@@ -6,6 +6,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.gakdo.trace.capture.captureset.domain.Camera;
 import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.captureset.domain.Light;
+import com.gakdo.trace.capture.common.infra.PublicIds;
+import com.gakdo.trace.capture.inspection.domain.DismissReason;
+import com.gakdo.trace.capture.inspection.domain.ReviewStatus;
+import com.gakdo.trace.capture.inspection.infra.ReviewQueueRepository.QueueRow;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
@@ -17,7 +21,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
-/** contracts capture-server.yaml DetectionBatchRequest·Detection·DetectionBatchResponse. */
+/** contracts capture-server.yaml DetectionBatchRequest·Detection·DetectionBatchResponse, 사람 검수(DefectReviewRequest·DefectReviewQueue). */
 public final class InspectionDtos {
 
     private InspectionDtos() {
@@ -46,5 +50,19 @@ public final class InspectionDtos {
     }
 
     public record DetectionBatchResponse(int accepted) {
+    }
+
+    /** 검수 결정 묶음(11/8). 한 요청 1~200개. */
+    public record DefectReviewRequest(@NotNull @Size(min = 1, max = 200) @Valid List<@NotNull @Valid ReviewItem> items) {
+    }
+
+    /** reason은 DISMISSED에만(서비스가 400으로 가린다). */
+    public record ReviewItem(
+            @NotNull @Pattern(regexp = PublicIds.PATTERN) String defectId,
+            @NotNull ReviewStatus decision,
+            DismissReason reason) {
+    }
+
+    public record DefectReviewQueue(List<QueueRow> items) {
     }
 }

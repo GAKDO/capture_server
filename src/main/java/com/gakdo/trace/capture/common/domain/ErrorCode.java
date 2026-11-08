@@ -16,7 +16,10 @@ public enum ErrorCode {
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 오류가 발생했습니다"),
     CAPTURE_FACES_MISSING(HttpStatus.CONFLICT, "촬영하지 않은 면이 있습니다"),
     CAPTURE_HASH_MISMATCH(HttpStatus.CONFLICT, "올린 사진이 처음 알린 사진과 다릅니다"),
-    CAPTURE_SET_CLOSED(HttpStatus.CONFLICT, "이미 완료된 촬영 세트입니다");
+    CAPTURE_SET_CLOSED(HttpStatus.CONFLICT, "이미 완료된 촬영 세트입니다"),
+    REVIEW_PENDING_REMAINS(HttpStatus.CONFLICT, "검수하지 않은 후보가 남았습니다"),
+    REVIEW_NOT_READY(HttpStatus.CONFLICT, "탐지·정합 결과가 아직 오지 않았습니다"),
+    REVIEW_CLOSED(HttpStatus.CONFLICT, "검수가 이미 끝난 시점입니다");
 
     private final HttpStatus status;
     private final String title;

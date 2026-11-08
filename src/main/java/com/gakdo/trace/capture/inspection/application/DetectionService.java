@@ -102,6 +102,10 @@ public class DetectionService {
         if (set.getStatus() == SetStatus.GRADED) {
             throw new DomainException(ErrorCode.CAPTURE_SET_CLOSED, "이미 등급이 매겨진 세트입니다.");
         }
+        if (set.getReviewCompletedAt() != null) {
+            // 검수 결정이 가리키는 흠집을 통째로 바꾸면 검수 기록이 사라진다. 검수 전이면 바꿔도 되고, 그때 결정은 새 후보로 다시 한다.
+            throw new DomainException(ErrorCode.CAPTURE_SET_CLOSED, "사람 검수를 이미 완료한 세트입니다.");
+        }
 
         Map<PhotoRef, Photo> photos = new HashMap<>();
         set.getPhotos().forEach(p -> photos.put(new PhotoRef(p.getFace(), p.getLight(), p.getCamera()), p));

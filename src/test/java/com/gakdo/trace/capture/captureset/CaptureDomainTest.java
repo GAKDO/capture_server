@@ -178,5 +178,6 @@ class CaptureDomainTest {
     /** contracts codes.yaml 0.6.0 error_code 중 이 서버가 쓰는 것을 포함한 전체 목록의 일부(공통 + capture). */
     private static final Set<String> CONTRACT_ERROR_CODES = Set.of("VALIDATION_FAILED", "UNAUTHENTICATED", "FORBIDDEN",
             "OUT_OF_SCOPE", "NOT_FOUND", "RATE_LIMITED", "IDEMPOTENCY_KEY_CONFLICT", "INTERNAL_ERROR",
-            "CAPTURE_FACES_MISSING", "CAPTURE_HASH_MISMATCH", "CAPTURE_SET_CLOSED");
+            "CAPTURE_FACES_MISSING", "CAPTURE_HASH_MISMATCH", "CAPTURE_SET_CLOSED", "REVIEW_PENDING_REMAINS",
+            "REVIEW_NOT_READY", "REVIEW_CLOSED");
 }
