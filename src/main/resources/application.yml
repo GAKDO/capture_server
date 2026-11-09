@@ -76,6 +76,8 @@ app:
   # 사람 검수(11/8): AI 후보가 있는 세트는 관리자가 검수를 완료한 뒤 등급을 매긴다. false면 검수 없이 바로 등급(이전 동작)
   review:
     required: ${REVIEW_REQUIRED:true}
+    # AI 후보가 없는 세트도 검수를 기다린다(11/9): 관리자가 놓친 흠집을 더하거나 그대로 완료하면 등급. false면 후보 없을 때 바로 등급
+    hold-empty: ${REVIEW_HOLD_EMPTY:true}
 
 management:
   endpoints:

@@ -107,6 +107,28 @@ public class Defect {
         this.updatedAt = createdAt;
     }
 
+    /** 사람이 직접 더한 흠집의 modelVersion(contracts addHumanDefect). */
+    public static final String HUMAN_MODEL = "human";
+
+    /**
+     * 관리자가 검수 화면에서 AI가 놓친 흠집을 원본 사진 위에 직접 그렸다(11/9 민서 요청). 출처 HUMAN, 신뢰도 1, 검수 상태는 바로 CONFIRMED.
+     * 표준 좌표는 정합 결과가 있으면 {@link #place}로 채운다.
+     */
+    public static Defect byHuman(Photo photo, DefectClass defectClass, List<List<Double>> photoPolygon, String adminId,
+            OffsetDateTime at) {
+        Defect d = new Defect(PublicIds.next(), photo, defectClass, photoPolygon, 1.0, HUMAN_MODEL);
+        d.source = DefectSource.HUMAN;
+        d.reviewStatus = ReviewStatus.CONFIRMED;
+        d.reviewedBy = adminId;
+        d.reviewedAt = at;
+        return d;
+    }
+
+    /** 관리자가 직접 더한 흠집. */
+    public boolean isHuman() {
+        return source == DefectSource.HUMAN;
+    }
+
     /** 부스(Jetson) 탐지: 원본 px만 있고 표준 좌표는 정합 뒤 {@link #place}. */
     public static Defect fromBooth(Photo photo, DefectClass defectClass, List<List<Double>> photoPolygon,
             double confidence, String modelVersion) {
