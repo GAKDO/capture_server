@@ -40,7 +40,7 @@ class ReviewOffGraderTest {
 
         assertThat(grader.gradeStuck()).isZero();
         verify(sets, never()).findStuckInReview(any(), any(), any());
-        verify(sets, never()).findWaitingWithoutCandidates(any(), any(), any());
+        verify(sets, never()).findWaitingForGrade(any(), any());
     }
 
     @Test
@@ -49,7 +49,7 @@ class ReviewOffGraderTest {
         when(grading.isReviewRequired()).thenReturn(true);
         when(grading.isHoldEmpty()).thenReturn(false);
         CaptureSet empty = mock(CaptureSet.class);
-        when(sets.findWaitingWithoutCandidates(any(), any(), any())).thenReturn(List.of("e"));
+        when(sets.findWaitingForGrade(any(), any())).thenReturn(List.of("e"));
         when(sets.findForUpdate("e")).thenReturn(Optional.of(empty));
         when(grading.gradeIfReady(empty)).thenReturn(true);
 

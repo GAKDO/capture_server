@@ -52,15 +52,15 @@ public interface CaptureSetRepository extends JpaRepository<CaptureSet, Long> {
     List<String> findStuckInReview(Collection<SetStatus> open, Quality unjudgeable, DefectSource auto);
 
     /**
-     * AI 후보 없이 검수를 기다리는 세트 ID(11/9 REVIEW_HOLD_EMPTY): 시점의 가장 최근 세트 중 촬영 완료·등급 전·검수 미완료이고 AUTO 흠집이
-     * 하나도 없는 것. 이 설정을 끄고 다시 띄울 때 등급을 매겨 대기 목록에서 사라진 채 남지 않게 한다(ReviewOffGrader).
+     * 등급을 기다리는 세트 ID(11/9 REVIEW_HOLD_EMPTY): 시점의 가장 최근 세트 중 촬영 완료·등급 전·검수 미완료인 것.
+     * 검수 후보가 있는지는 여기서 거르지 않는다. 건너뛴 면에만 AUTO 흠집이 있거나 표준 좌표가 없으면 후보가 아니므로,
+     * 후보 판정은 GradingService.gradeIfReady(reviewCandidates)에 맡긴다. 설정을 끄고 다시 띄울 때 쓴다(ReviewOffGrader).
      */
     @Query("""
             select s.publicId from CaptureSet s
             where s.status in :open and s.reviewCompletedAt is null and s.completedAt is not null
               and (s.quality is null or s.quality <> :unjudgeable)
               and s.id = (select max(s2.id) from CaptureSet s2 where s2.checkpointId = s.checkpointId)
-              and not exists (select d.id from Defect d where d.photo.captureSet = s and d.source = :auto)
             """)
-    List<String> findWaitingWithoutCandidates(Collection<SetStatus> open, Quality unjudgeable, DefectSource auto);
+    List<String> findWaitingForGrade(Collection<SetStatus> open, Quality unjudgeable);
 }

@@ -49,9 +49,10 @@ public class ReviewOffGrader {
         if (!grading.isReviewRequired()) {
             ids.addAll(sets.findStuckInReview(open, Quality.UNJUDGEABLE, DefectSource.AUTO));
         }
-        // 후보 없는 세트 기다리기(REVIEW_HOLD_EMPTY)를 끄면 그동안 기다리던 세트도 바로 등급을 매긴다(11/9)
+        // 후보 없는 세트 기다리기(REVIEW_HOLD_EMPTY)를 끄면 그동안 기다리던 세트도 바로 등급을 매긴다(11/9).
+        // 후보가 남은 세트는 gradeIfReady가 그대로 검수 대기로 둔다
         if (!grading.isHoldEmpty()) {
-            sets.findWaitingWithoutCandidates(open, Quality.UNJUDGEABLE, DefectSource.AUTO).stream()
+            sets.findWaitingForGrade(open, Quality.UNJUDGEABLE).stream()
                     .filter(id -> !ids.contains(id)).forEach(ids::add);
         }
         if (ids.isEmpty()) {
