@@ -110,7 +110,7 @@ class QuickGradingTest {
     }
 
     @Test
-    @DisplayName("같은 카메라의 L1·L2·L3 사진에 함께 잡힌 같은 흠집은 한 번만 세고, 다른 카메라는 따로 센다")
+    @DisplayName("같은 카메라의 L1·L2·L3 사진에 함께 잡힌 같은 흠집은 한 번만 세고, 다른 카메라라도 면 위 자리가 먼 흠집은 따로 센다")
     void sameSpotAcrossLightsCountsOnce() {
         CaptureSet set = completedQuickSet();
         Photo topL1 = photo(set, Face.TOP, Camera.CAM1, Light.L1);
@@ -121,8 +121,60 @@ class QuickGradingTest {
                 Defect.fromBooth(topL1, DefectClass.SCRATCH, BOX, 0.7, "v"),
                 Defect.fromBooth(topL2, DefectClass.SCRATCH, BOX, 0.9, "v"),
                 Defect.fromBooth(topL3, DefectClass.SCRATCH, BOX, 0.8, "v"),
+                // CAM2 사진의 같은 px 자리는 면 위로 옮기면 CAM1 자리와 4cm 넘게 떨어진 다른 곳이다
                 Defect.fromBooth(topCam2, DefectClass.SCRATCH, BOX, 0.9, "v"));
         assertThat(GradingService.quickGroups(found, Set.of(Face.TOP, Face.BOT))).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("CAM1·CAM2 사진에 함께 찍힌 같은 흠집(11/9 X391 바닥)은 L1·L2 네 장에 잡혀도 하나로 세어 긁힘 1개 → B")
+    void sameSpotAcrossCamerasCountsOnce() {
+        CaptureSet set = completedQuickSet();
+        set.markDetectionsReceived();
+        // 11/9 X391 출고 빠른 검사 바닥: CAM1 (0.661, 0.70), CAM2 (0.746, 0.689) 사진 비율 자리의 같은 긁힘
+        List<List<Double>> cam1 = box(0.661 * 1920, 0.70 * 1080);
+        List<List<Double>> cam2 = box(0.746 * 1920, 0.689 * 1080);
+        when(defects.findBySet(set)).thenReturn(List.of(
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM1, Light.L1), DefectClass.SCRATCH, cam1, 0.48, "v"),
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM2, Light.L1), DefectClass.SCRATCH, cam2, 0.30, "v"),
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM1, Light.L2), DefectClass.SCRATCH, cam1, 0.57, "v"),
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM2, Light.L2), DefectClass.SCRATCH, cam2, 0.37, "v")));
+
+        grading.gradeIfReady(set);
+
+        ArgumentCaptor<GradeResult> saved = ArgumentCaptor.forClass(GradeResult.class);
+        verify(grades).save(saved.capture());
+        assertThat(saved.getValue().getGrade()).isEqualTo(Grade.B);
+        assertThat(saved.getValue().getReasons().get(0)).startsWith("긁힘 1개");
+        assertThat(saved.getValue().getReasons()).contains("CAM1·CAM2 두 카메라에 함께 찍힌 같은 흠집 1개는 하나로 셈");
+    }
+
+    @Test
+    @DisplayName("한 카메라에 따로 잡힌 가까운 두 흠집은 다른 카메라의 흠집 하나와 함께 묶이지 않는다(가까운 쪽 하나만 합침)")
+    void oneToOneAcrossCameras() {
+        CaptureSet set = completedQuickSet();
+        // CAM1에 1.5cm 떨어진 두 긁힘(같은 카메라라 px로는 묶이지 않음), CAM2에는 그중 하나와 같은 자리 하나
+        List<Defect> found = List.of(
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM1), DefectClass.SCRATCH, box(1269, 756), 0.9, "v"),
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM1), DefectClass.SCRATCH, box(1269, 820), 0.9, "v"),
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM2), DefectClass.SCRATCH, box(1432, 744), 0.9, "v"));
+        assertThat(GradingService.quickGroups(found, Set.of(Face.BOT))).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("다른 면의 흠집이나 오염과 긁힘은 카메라 사이에서도 합치지 않는다")
+    void crossCameraKeepsFaceAndStain() {
+        CaptureSet set = completedQuickSet();
+        List<Defect> found = List.of(
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM1), DefectClass.SCRATCH, box(1269, 756), 0.9, "v"),
+                Defect.fromBooth(photo(set, Face.BOT, Camera.CAM2), DefectClass.STAIN, box(1432, 744), 0.9, "v"),
+                Defect.fromBooth(photo(set, Face.TOP, Camera.CAM2), DefectClass.SCRATCH, box(1432, 744), 0.9, "v"));
+        assertThat(GradingService.quickGroups(found, Set.of(Face.TOP, Face.BOT))).hasSize(3);
+    }
+
+    /** 가운데가 (x, y) px인 작은 사각형(6×4 px) */
+    private static List<List<Double>> box(double x, double y) {
+        return List.of(List.of(x - 3, y - 2), List.of(x + 3, y - 2), List.of(x + 3, y + 2), List.of(x - 3, y + 2));
     }
 
     @Test

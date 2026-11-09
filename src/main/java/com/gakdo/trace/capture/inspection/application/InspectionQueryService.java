@@ -78,7 +78,7 @@ public class InspectionQueryService {
 
     /**
      * 빠른 검사 흠집: 원본 사진 px. 어느 사진인지는 face·light·camera로 찾는다(민서 11/3 결정: 별도 칸).
-     * groupId는 같은 면·카메라에서 겹치는 흠집 묶음의 대표 defectId(등급 계산의 묶기와 같다, 11/8).
+     * groupId는 같은 면에서 겹치는 흠집 묶음(조명만 다른 사진, 11/9부터 CAM1·CAM2 두 카메라 사진도 합침)의 대표 defectId(등급 계산의 묶기와 같다, 11/8).
      */
     public record PhotoDefectView(String defectId, String face, String light, String camera,
             @JsonProperty("class") String defectClass, List<List<Double>> polygon, double confidence,
@@ -187,7 +187,7 @@ public class InspectionQueryService {
         return text.length() > 500 ? text.substring(0, 500) : text;
     }
 
-    /** 흠집 id → 같은 면·카메라에서 겹치는 묶음의 대표 id(첫 흠집). 등급 계산(GradingService.quickGroups)과 같은 묶기. */
+    /** 흠집 id → 같은 면에서 겹치는 묶음(조명·카메라 사이)의 대표 id(첫 흠집). 등급 계산(GradingService.quickGroups)과 같은 묶기. */
     static Map<String, String> groupIds(CaptureSet set, List<Defect> list) {
         Set<Face> faces = EnumSet.noneOf(Face.class);
         set.getPhotos().stream().filter(Photo::isUploaded).forEach(p -> faces.add(p.getFace()));

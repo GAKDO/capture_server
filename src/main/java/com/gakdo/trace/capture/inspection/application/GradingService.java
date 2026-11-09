@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.gakdo.trace.capture.captureset.domain.Camera;
 import com.gakdo.trace.capture.captureset.domain.CaptureProfile;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.CaptureSource;
@@ -32,10 +33,13 @@ import com.gakdo.trace.capture.comparison.domain.DefectMatch;
 import com.gakdo.trace.capture.comparison.domain.DefectObservation;
 import com.gakdo.trace.capture.comparison.domain.MatchRule;
 import com.gakdo.trace.capture.comparison.domain.MatchStatus;
+import com.gakdo.trace.capture.comparison.domain.Point;
+import com.gakdo.trace.capture.comparison.domain.Shapes;
 import com.gakdo.trace.capture.comparison.domain.ViewComparator;
 import com.gakdo.trace.capture.comparison.domain.ViewSnapshot;
 import com.gakdo.trace.capture.inspection.application.CheckpointGradedEvent.PhotoHash;
 import com.gakdo.trace.capture.inspection.application.CheckpointGradedEvent.Pin;
+import com.gakdo.trace.capture.inspection.domain.BoothFrame;
 import com.gakdo.trace.capture.inspection.domain.CheckpointKind;
 import com.gakdo.trace.capture.inspection.domain.Defect;
 import com.gakdo.trace.capture.inspection.domain.DefectGroups;
@@ -62,6 +66,10 @@ public class GradingService {
 
     private static final Logger log = LoggerFactory.getLogger(GradingService.class);
     private static final MatchRule RULE = MatchRule.V1;
+    /** 빠른 검사 카메라 사이 묶기 거리(mm). 평균 보정 모서리로 옮긴 두 카메라 위치가 놓는 자리 차이로 6~18 mm 어긋나 여유를 둔다. */
+    static final double QUICK_CAMERA_MERGE_MM = 20.0;
+    /** 전체 검사 카메라 사이 묶기 거리(mm). 사진마다 정합해 같은 표준 좌표라 빠른 검사보다 좁게. */
+    static final double FULL_CAMERA_MERGE_MM = 15.0;
     /** 계약 trace.checkpoint.graded pins maxItems */
     static final int MAX_PINS = 500;
 
@@ -199,8 +207,14 @@ public class GradingService {
         List<DefectGroups.Item> items = current.stream()
                 .map(d -> new DefectGroups.Item(observe(d), d.getLengthMm(), status.get(d.getPublicId())))
                 .toList();
-        List<DefectGroups.Group> groups = DefectGroups.group(items, RULE);
-        GradeRules.Outcome outcome = GradeRules.evaluate(groups, unjudgeable, previous.isEmpty());
+        List<DefectGroups.Placed> placed = DefectGroups.group(items, RULE).stream()
+                .map(g -> placeStandard(g, currentById)).toList();
+        List<DefectGroups.Group> groups = DefectGroups.mergeAcrossCameras(placed, FULL_CAMERA_MERGE_MM, RULE);
+        GradeRules.Outcome evaluated = GradeRules.evaluate(groups, unjudgeable, previous.isEmpty());
+        List<String> fullReasons = new ArrayList<>(evaluated.reasons());
+        Optional.ofNullable(mergedReason(placed.size() - groups.size())).ifPresent(r -> fullReasons.add(1, r));
+        GradeRules.Outcome outcome = new GradeRules.Outcome(evaluated.grade(), evaluated.ruleVersion(),
+                List.copyOf(fullReasons));
 
         GradeResult result = grades.findByCheckpointId(set.getCheckpointId())
                 .orElseGet(() -> new GradeResult(set.getCheckpointId()));
@@ -251,12 +265,14 @@ public class GradingService {
         if (awaitingReview(set, all)) {
             return false;
         }
-        List<DefectGroups.Group> groups = quickGroups(notDismissed(all), uploaded);
+        QuickGrouping grouping = quickGrouping(notDismissed(all), uploaded);
+        List<DefectGroups.Group> groups = grouping.groups();
         Optional<GradeResult> previous = grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(
                 set.getRentalId(), set.getCheckpointId());
         boolean baseline = previous.isEmpty();
         GradeRules.Outcome outcome = GradeRules.evaluate(groups, unjudgeable, baseline);
         List<String> reasons = new ArrayList<>(outcome.reasons());
+        Optional.ofNullable(mergedReason(grouping.mergedAcrossCameras())).ifPresent(r -> reasons.add(1, r));
         reasons.add("빠른 검사(위·아래 " + uploaded.size() + "면, 정합·위치 비교 없음)");
         previous.map(p -> quickCountChange(p, groups)).ifPresent(reasons::add);
 
@@ -278,24 +294,90 @@ public class GradingService {
     }
 
     /**
-     * 빠른 검사 흠집 묶기: 같은 면·같은 카메라 사진끼리만 원본 px로 묶는다. 부스 카메라는 고정이라 조명(L1·L2·L3)만 다른 사진은
-     * 좌표가 같아, 두 조명에 함께 잡힌 같은 흠집을 한 번만 센다. 다른 카메라 사진은 좌표계가 달라 합치지 않는다.
-     * 묶는 거리는 비교 규칙과 같은 20 px(표준 좌표 5 mm 자리)를 원본 px에 그대로 쓴다. 길이는 몰라 null, 비교 없음.
+     * 빠른 검사 흠집 묶기(11/9). 두 단계로 묶는다.
+     * <ol>
+     *   <li>같은 면·같은 카메라 사진끼리 원본 px로 묶는다. 부스 카메라는 고정이라 조명(L1·L2·L3)만 다른 사진은 좌표가 같아, 두 조명에
+     *       함께 잡힌 같은 흠집을 한 번만 센다. 거리는 비교 규칙과 같은 20 px(표준 좌표 5 mm 자리)를 원본 px에 그대로 쓴다.</li>
+     *   <li>CAM1·CAM2는 각자 면 전체를 찍어 같은 흠집이 두 카메라에 한 번씩 잡힌다. 사진 점을 부스 보정 모서리({@link BoothFrame},
+     *       web docs/pin-calibration.md)로 면 위 mm로 옮겨 {@value #QUICK_CAMERA_MERGE_MM} mm 안이면 하나로 합친다.</li>
+     * </ol>
+     * 길이는 몰라 null, 비교 없음.
      */
     static List<DefectGroups.Group> quickGroups(List<Defect> all, Set<Face> judgeable) {
+        return quickGrouping(all, judgeable).groups();
+    }
+
+    /** 묶인 흠집과, 그중 두 카메라에 함께 잡혀 하나로 합친 수(근거 문장용). */
+    record QuickGrouping(List<DefectGroups.Group> groups, int mergedAcrossCameras) {
+    }
+
+    static QuickGrouping quickGrouping(List<Defect> all, Set<Face> judgeable) {
         Map<String, List<DefectGroups.Item>> byPhotoFrame = new java.util.LinkedHashMap<>();
+        Map<String, Defect> byId = new HashMap<>();
         for (Defect d : all) {
             Face face = d.getPhoto().getFace();
             if (!judgeable.contains(face) || d.getPhotoPolygon() == null || d.getPhotoPolygon().size() < 3) {
                 continue;
             }
+            byId.put(d.getPublicId(), d);
             byPhotoFrame.computeIfAbsent(face + "-" + d.getPhoto().getCamera(), k -> new ArrayList<>())
                     .add(new DefectGroups.Item(DefectObservation.fromStandardPx(d.getPublicId(), face,
                             d.getDefectClass(), d.getPhotoPolygon()), null, null));
         }
-        List<DefectGroups.Group> groups = new ArrayList<>();
-        byPhotoFrame.values().forEach(items -> groups.addAll(DefectGroups.group(items, RULE)));
-        return groups;
+        List<DefectGroups.Placed> placed = new ArrayList<>();
+        for (List<DefectGroups.Item> items : byPhotoFrame.values()) {
+            for (DefectGroups.Group g : DefectGroups.group(items, RULE)) {
+                placed.add(placeInPhoto(g, byId));
+            }
+        }
+        List<DefectGroups.Group> groups = DefectGroups.mergeAcrossCameras(placed, QUICK_CAMERA_MERGE_MM, RULE);
+        return new QuickGrouping(groups, placed.size() - groups.size());
+    }
+
+    /** 한 카메라 묶음의 면 위 자리: 묶음 흠집마다 원본 px 중심을 면 위 mm로 옮겨 평균한다. 옮길 수 없으면 자리 없음(합치지 않음). */
+    private static DefectGroups.Placed placeInPhoto(DefectGroups.Group g, Map<String, Defect> byId) {
+        Set<Camera> cameras = EnumSet.noneOf(Camera.class);
+        double x = 0;
+        double y = 0;
+        int n = 0;
+        for (String id : g.defectIds()) {
+            Defect d = byId.get(id);
+            Photo photo = d.getPhoto();
+            cameras.add(photo.getCamera());
+            Optional<Point> at = BoothFrame.centerMm(photo.getFace(), photo.getCamera(), d.getPhotoPolygon(),
+                    photo.getCaptureSet() == null ? null : photo.getCaptureSet().getDevice());
+            if (at.isPresent()) {
+                x += at.get().x();
+                y += at.get().y();
+                n++;
+            }
+        }
+        return new DefectGroups.Placed(g, cameras, n == 0 ? null : new Point(x / n, y / n));
+    }
+
+    /**
+     * 전체 검사 묶음의 면 위 자리: 표준 좌표(mm) polygon 중심의 평균. 정합으로 이미 같은 표준 좌표라 5 mm 규칙으로 대부분 묶이지만,
+     * 정합 오차로 두 카메라 위치가 조금 더 벌어진 같은 흠집을 {@value #FULL_CAMERA_MERGE_MM} mm 안에서 한 번 더 합친다.
+     */
+    private static DefectGroups.Placed placeStandard(DefectGroups.Group g, Map<String, Defect> byId) {
+        Set<Camera> cameras = EnumSet.noneOf(Camera.class);
+        double x = 0;
+        double y = 0;
+        int n = 0;
+        for (String id : g.defectIds()) {
+            Defect d = byId.get(id);
+            cameras.add(d.getPhoto().getCamera());
+            Point c = Shapes.centroid(observe(d).polygon());
+            x += c.x();
+            y += c.y();
+            n++;
+        }
+        return new DefectGroups.Placed(g, cameras, n == 0 ? null : new Point(x / n, y / n));
+    }
+
+    /** 두 카메라에 함께 잡혀 하나로 센 흠집 수를 근거 문장으로. 없으면 null. */
+    static String mergedReason(int merged) {
+        return merged > 0 ? "CAM1·CAM2 두 카메라에 함께 찍힌 같은 흠집 " + merged + "개는 하나로 셈" : null;
     }
 
     /**
