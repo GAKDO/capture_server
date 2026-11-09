@@ -182,12 +182,13 @@ public class ReviewService {
     public InspectionView remove(Caller caller, String adminId, String checkpointId, String defectId) {
         requireAdmin(caller);
         CaptureSet set = lockLatest(checkpointId);
-        List<Defect> all = defects.findBySet(set);
-        Defect target = all.stream().filter(d -> d.isHuman() && d.getPublicId().equals(defectId)).findFirst()
-                .orElseThrow(() -> DomainException.notFound("직접 추가한 흠집"));
+        // 닫힌 검수는 흠집이 있든 없든 409로 먼저 알린다(계약 REVIEW_CLOSED)
         if (set.getReviewCompletedAt() != null || set.getStatus() == SetStatus.GRADED) {
             throw new DomainException(ErrorCode.REVIEW_CLOSED, "검수를 완료했거나 이미 등급이 난 시점입니다.");
         }
+        List<Defect> all = defects.findBySet(set);
+        Defect target = all.stream().filter(d -> d.isHuman() && d.getPublicId().equals(defectId)).findFirst()
+                .orElseThrow(() -> DomainException.notFound("직접 추가한 흠집"));
         defects.delete(target);
         defects.flush();
         log.info("직접 추가한 흠집 지움 checkpoint={} set={} defect={} by={}", checkpointId, set.getPublicId(), defectId,

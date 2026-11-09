@@ -182,7 +182,7 @@ class HumanDefectTest {
     @DisplayName("대기 목록 SQL은 후보 없는 세트도 0건으로 싣되 탐지·정합 전 세트는 뺀다")
     void queueSqlIncludesEmptySets() {
         String sql = ReviewQueueRepository.pendingSql(true);
-        assertThat(sql).contains("LEFT JOIN per_set").contains("coalesce(ps.pending, 0)")
+        assertThat(sql).contains("LEFT JOIN per_set").contains("coalesce(ps.pending, 0)").contains("coalesce(ps.confirmed, 0)").contains("coalesce(ps.dismissed, 0)")
                 .contains("detections_received_at IS NOT NULL").contains("LIMIT :limit");
         assertThat(ReviewQueueRepository.pendingSql(false)).doesNotContain("LEFT JOIN per_set");
         assertThat(ReviewQueueRepository.doneSql(true)).contains("LEFT JOIN per_set").contains("review_completed_at DESC");
