@@ -330,10 +330,10 @@ public class GradingService {
         return groups.stream().filter(g -> g.defectClass() != DefectClass.STAIN).count();
     }
 
-    private static List<PhotoState> states(CaptureSet set, Set<Long> aligned) {
+    static List<PhotoState> states(CaptureSet set, Set<Long> aligned) {
         return set.getPhotos().stream()
                 .map(p -> new PhotoState(p.getFace(), p.getCamera(), p.isUploaded(), p.isQualityOk(),
-                        aligned.contains(p.getId())))
+                        aligned.contains(p.getId()), p.getAlignFailure()))
                 .toList();
     }
 

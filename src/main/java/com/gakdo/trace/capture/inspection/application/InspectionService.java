@@ -1,5 +1,6 @@
 package com.gakdo.trace.capture.inspection.application;
 
+import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -18,6 +19,7 @@ import com.gakdo.trace.capture.captureset.domain.Photo;
 import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.common.infra.PublicIds;
+import com.gakdo.trace.capture.common.infra.Times;
 import com.gakdo.trace.capture.comparison.domain.DefectClass;
 import com.gakdo.trace.capture.inspection.application.InspectEvent.Alignment;
 import com.gakdo.trace.capture.inspection.application.InspectEvent.WorkerDefect;
@@ -87,6 +89,7 @@ public class InspectionService {
             byPhoto.put(photo.getId(), saved);
         }
         alignments.saveAll(byPhoto.values());
+        recordFailures(set, event.failedPhotos(), photos, homographies);
         saveTextures(set, event.textureKeys());
 
         if (set.getSource() == CaptureSource.BOOTH) {
@@ -107,6 +110,31 @@ public class InspectionService {
                 event.failedPhotos() == null ? 0 : event.failedPhotos().size(), event.defects().size());
         grading.gradeIfReady(set);
         return true;
+    }
+
+    /**
+     * 정합 실패 사유를 사진에 남기고 로그로도 남긴다(11/9: 옆면 판정 불가 원인을 서버에서 바로 보려고). 세트에 없는 사진·정합 결과가 있는
+     * 사진의 실패 항목은 무시한다(worker 버그로 이벤트 전체를 버리지 않게).
+     */
+    private static void recordFailures(CaptureSet set, List<InspectEvent.FailedPhoto> failed, Map<String, Photo> photos,
+            Map<String, Homography> homographies) {
+        if (failed == null || failed.isEmpty()) {
+            return;
+        }
+        OffsetDateTime now = Times.now();
+        for (InspectEvent.FailedPhoto f : failed) {
+            if (f == null || f.photoId() == null) {
+                continue;
+            }
+            Photo photo = photos.get(f.photoId());
+            if (photo == null || homographies.containsKey(f.photoId())) {
+                log.warn("정합 실패 항목을 무시합니다 set={} photoId={}", set.getPublicId(), f.photoId());
+                continue;
+            }
+            photo.markAlignFailed(f.reason(), now);
+            log.warn("정합 실패 set={} 사진={}-{}-{} 사유={}", set.getPublicId(), photo.getFace(), photo.getLight(),
+                    photo.getCamera(), photo.getAlignFailure());
+        }
     }
 
     private Defect workerDefect(WorkerDefect d, Map<String, Photo> photos, Map<String, Homography> homographies,
