@@ -124,7 +124,7 @@ public class DetectionService {
 
         // 통째로 바꾸기: 등급 전이라 이 세트 흠집을 가리키는 다른 시점 매칭은 없다
         matches.deleteBySet(set);
-        defects.deleteBySet(set);
+        defects.deleteAutoBySet(set); // 관리자가 직접 더한 흠집은 남긴다(11/9)
         List<Defect> saved = detections.stream()
                 .map(d -> Defect.fromBooth(photos.get(d.photo()), DefectClass.fromCode(d.defectClass()), d.polygon(),
                         d.confidence(), modelVersion))

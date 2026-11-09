@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -47,13 +49,28 @@ public class InspectionQueryService {
     private final GradeResultRepository grades;
     private final FaceAlignmentRepository alignments;
 
+    private final boolean reviewRequired;
+    private final boolean holdEmpty;
+
+    /** 검수 켬·후보 없는 세트는 바로 등급(이전 동작). 단위 테스트용. */
     public InspectionQueryService(CaptureSetRepository sets, DefectRepository defects, DefectMatchRepository matches,
             GradeResultRepository grades, FaceAlignmentRepository alignments) {
+        this(sets, defects, matches, grades, alignments, true, false);
+    }
+
+    /** review.open 계산에 GradingService와 같은 설정(app.review.required·hold-empty)을 쓴다. */
+    @Autowired
+    public InspectionQueryService(CaptureSetRepository sets, DefectRepository defects, DefectMatchRepository matches,
+            GradeResultRepository grades, FaceAlignmentRepository alignments,
+            @Value("${app.review.required:true}") boolean reviewRequired,
+            @Value("${app.review.hold-empty:true}") boolean holdEmpty) {
         this.sets = sets;
         this.defects = defects;
         this.matches = matches;
         this.grades = grades;
         this.alignments = alignments;
+        this.reviewRequired = reviewRequired;
+        this.holdEmpty = holdEmpty;
     }
 
     /**
@@ -82,7 +99,7 @@ public class InspectionQueryService {
      */
     public record PhotoDefectView(String defectId, String face, String light, String camera,
             @JsonProperty("class") String defectClass, List<List<Double>> polygon, double confidence,
-            String modelVersion, String groupId, ReviewView review) {
+            String modelVersion, String groupId, ReviewView review, String source) {
     }
 
     /** 흠집 하나의 검수 상태(contracts DefectReview). 값이 없으면 null을 그대로 싣는다(계약 required). */
@@ -95,8 +112,12 @@ public class InspectionQueryService {
         }
     }
 
-    /** 시점의 검수 요약(contracts InspectionReview). 후보가 없던 세트는 모두 0이고 completedAt은 등급 시각. */
-    public record ReviewSummary(int pending, int confirmed, int dismissed, OffsetDateTime completedAt) {
+    /**
+     * 시점의 검수 요약(contracts InspectionReview). 후보가 없던 세트는 모두 0이고 completedAt은 등급 시각.
+     * added는 관리자가 직접 더한 흠집 수, open은 지금 검수 칸을 열어야 하는지(11/9).
+     */
+    public record ReviewSummary(int pending, int confirmed, int dismissed, OffsetDateTime completedAt, int added,
+            boolean open) {
     }
 
     public record MatchView(String status, String prevDefectId, Double distanceMm) {
@@ -129,7 +150,7 @@ public class InspectionQueryService {
         Map<Long, DefectMatchRecord> byDefect = new HashMap<>();
         matches.findBySet(set).forEach(m -> byDefect.put(m.getDefect().getId(), m));
         List<Defect> all = defects.findBySet(set);
-        ReviewSummary review = summary(set, all, grade);
+        ReviewSummary review = summary(set, all, grade, ReviewService.open(set, all, reviewRequired, holdEmpty));
         // 고객에게는 사람이 흠집 아님으로 정한 후보를 보이지 않는다
         List<Defect> shown = caller.isAdmin() ? all : all.stream().filter(d -> !d.isDismissed()).toList();
         List<UnjudgeableFace> unjudgeable = unjudgeableFaces(set);
@@ -144,7 +165,8 @@ public class InspectionQueryService {
                 .map(d -> new PhotoDefectView(d.getPublicId(), d.getPhoto().getFace().name(),
                         d.getPhoto().getLight().name(), d.getPhoto().getCamera().name(), d.getDefectClass().code(),
                         d.getPhotoPolygon(), d.getConfidence(), d.getModelVersion(),
-                        groupOf.getOrDefault(d.getPublicId(), d.getPublicId()), ReviewView.of(d)))
+                        groupOf.getOrDefault(d.getPublicId(), d.getPublicId()), ReviewView.of(d),
+                        d.getSource().name()))
                 .toList();
         if (set.isQuick()) {
             return view(checkpointId, grade, List.of(), photo, review, set, unjudgeable);
@@ -200,7 +222,7 @@ public class InspectionQueryService {
     }
 
     /** 검수 요약: 후보(GradingService.reviewCandidates) 수와 완료 시각. 검수 없이 등급이 났으면 등급 시각을 완료 시각으로 둔다. */
-    static ReviewSummary summary(CaptureSet set, List<Defect> all, Optional<GradeResult> grade) {
+    static ReviewSummary summary(CaptureSet set, List<Defect> all, Optional<GradeResult> grade, boolean open) {
         List<Defect> candidates = GradingService.reviewCandidates(set, all);
         int pending = 0;
         int confirmed = 0;
@@ -219,7 +241,8 @@ public class InspectionQueryService {
         if (completedAt == null && gradedThisSet) {
             completedAt = grade.get().getUpdatedAt();
         }
-        return new ReviewSummary(pending, confirmed, dismissed, completedAt);
+        int added = (int) all.stream().filter(Defect::isHuman).count();
+        return new ReviewSummary(pending, confirmed, dismissed, completedAt, added, open);
     }
 
     /** 앞 시점 흠집과의 대응. 대응 기록이 없으면 null, 앞 흠집이 없으면(신규) prevDefectId가 null. */

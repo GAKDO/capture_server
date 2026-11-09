@@ -71,6 +71,7 @@ public class GradingService {
     private final GradeResultRepository grades;
     private final GradeEventPublisher events;
     private final boolean reviewRequired;
+    private final boolean holdEmpty;
     private final ViewComparator comparator = new ViewComparator(RULE);
 
     /** 검수 없이 바로 등급을 매긴다(검수 이전 동작, 단위 테스트용). */
@@ -79,17 +80,34 @@ public class GradingService {
         this(defects, matches, alignments, grades, events, false);
     }
 
-    /** reviewRequired(app.review.required, 기본 true)가 false면 후보가 있어도 검수를 기다리지 않는다(검수 화면 배포 전 되돌리기용). */
+    /** 후보가 없으면 바로 등급(holdEmpty 끔). 단위 테스트·이전 동작용. */
+    public GradingService(DefectRepository defects, DefectMatchRepository matches, FaceAlignmentRepository alignments,
+            GradeResultRepository grades, GradeEventPublisher events, boolean reviewRequired) {
+        this(defects, matches, alignments, grades, events, reviewRequired, false);
+    }
+
+    /**
+     * reviewRequired(app.review.required, 기본 true)가 false면 후보가 있어도 검수를 기다리지 않는다(검수 화면 배포 전 되돌리기용).
+     * holdEmpty(app.review.hold-empty, 기본 true, 11/9)면 AI 후보가 없는 세트도 검수를 기다린다. AI가 놓친 흠집을 관리자가 더할 틈을
+     * 주려고(바로 등급이 나면 곧 봉인돼 더할 수 없다).
+     */
     @Autowired
     public GradingService(DefectRepository defects, DefectMatchRepository matches, FaceAlignmentRepository alignments,
             GradeResultRepository grades, GradeEventPublisher events,
-            @Value("${app.review.required:true}") boolean reviewRequired) {
+            @Value("${app.review.required:true}") boolean reviewRequired,
+            @Value("${app.review.hold-empty:true}") boolean holdEmpty) {
         this.defects = defects;
         this.matches = matches;
         this.alignments = alignments;
         this.grades = grades;
         this.events = events;
         this.reviewRequired = reviewRequired;
+        this.holdEmpty = holdEmpty;
+    }
+
+    /** 후보가 없는 세트도 검수를 기다리나(검수를 켰을 때만 뜻이 있다). */
+    public boolean isHoldEmpty() {
+        return reviewRequired && holdEmpty;
     }
 
     public boolean isReviewRequired() {
@@ -116,7 +134,10 @@ public class GradingService {
         }
         List<Defect> candidates = reviewCandidates(set, all);
         if (candidates.isEmpty()) {
-            return false;
+            if (holdEmpty) {
+                log.info("AI 후보가 없지만 사람 검수를 기다립니다(놓친 흠집 추가용) set={}", set.getPublicId());
+            }
+            return holdEmpty;
         }
         long pending = candidates.stream().filter(d -> d.getReviewStatus() == ReviewStatus.PENDING).count();
         log.info("사람 검수를 기다립니다 set={} 후보={} 남은 것={}", set.getPublicId(), candidates.size(), pending);

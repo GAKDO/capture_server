@@ -63,6 +63,15 @@ public final class InspectionDtos {
             DismissReason reason) {
     }
 
+    /** 관리자가 원본 사진 한 장 위에 그린 흠집(11/9). polygon은 원본 px 꼭짓점 3~200개(서비스가 좌표 범위를 다시 본다). */
+    public record HumanDefectRequest(
+            @NotNull Face face,
+            @NotNull Light light,
+            @NotNull Camera camera,
+            @JsonProperty("class") @NotNull @Pattern(regexp = "scratch|dent|crack|stain") String defectClass,
+            @NotNull @Size(min = 3, max = 200) List<@NotNull @Size(min = 2, max = 2) List<@NotNull Double>> polygon) {
+    }
+
     public record DefectReviewQueue(List<QueueRow> items) {
     }
 }

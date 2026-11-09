@@ -5,6 +5,8 @@ import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -54,20 +56,52 @@ public class ReviewQueueRepository {
              LIMIT :limit
             """;
 
+    /**
+     * 후보 없는 세트도 검수를 기다릴 때(app.review.hold-empty, 11/9): 후보 없는 세트를 0건으로 함께 싣는다. 탐지·정합이 아직이면
+     * 검수할 수 없으니 대기 목록에서 빼고, 완료 목록에는 후보 없이 완료한 세트도 들어간다.
+     */
+    private static final String COUNTS_WITH_EMPTY = COUNTS
+            .replace("  JOIN per_set ps ON ps.set_id = cs.id", "  LEFT JOIN per_set ps ON ps.set_id = cs.id")
+            .replace("ps.pending, ps.confirmed, ps.dismissed",
+                    "coalesce(ps.pending, 0) AS pending, coalesce(ps.confirmed, 0) AS confirmed,"
+                            + " coalesce(ps.dismissed, 0) AS dismissed");
+
+    private static final String READY = """
+               AND (ps.set_id IS NOT NULL OR ((cs.source <> 'BOOTH' OR cs.detections_received_at IS NOT NULL)
+                    AND (cs.profile = 'QUICK' OR cs.status = 'INSPECTED')))
+            """;
+
     private final NamedParameterJdbcTemplate jdbc;
+    private final boolean holdEmpty;
 
     public ReviewQueueRepository(NamedParameterJdbcTemplate jdbc) {
+        this(jdbc, false, false);
+    }
+
+    @Autowired
+    public ReviewQueueRepository(NamedParameterJdbcTemplate jdbc,
+            @Value("${app.review.required:true}") boolean reviewRequired,
+            @Value("${app.review.hold-empty:true}") boolean holdEmpty) {
         this.jdbc = jdbc;
+        this.holdEmpty = reviewRequired && holdEmpty;
     }
 
     /** 검수 완료 전 시점(오래 기다린 것부터). */
     public List<QueueRow> pending(int limit) {
-        return jdbc.query(PENDING, new MapSqlParameterSource("limit", limit), (rs, i) -> row(rs));
+        return jdbc.query(pendingSql(holdEmpty), new MapSqlParameterSource("limit", limit), (rs, i) -> row(rs));
     }
 
     /** 검수 완료한 시점(최근 완료부터). */
     public List<QueueRow> done(int limit) {
-        return jdbc.query(DONE, new MapSqlParameterSource("limit", limit), (rs, i) -> row(rs));
+        return jdbc.query(doneSql(holdEmpty), new MapSqlParameterSource("limit", limit), (rs, i) -> row(rs));
+    }
+
+    public static String pendingSql(boolean holdEmpty) {
+        return holdEmpty ? COUNTS_WITH_EMPTY + READY + PENDING.substring(COUNTS.length()) : PENDING;
+    }
+
+    public static String doneSql(boolean holdEmpty) {
+        return holdEmpty ? COUNTS_WITH_EMPTY + DONE.substring(COUNTS.length()) : DONE;
     }
 
     private static QueueRow row(ResultSet rs) throws SQLException {

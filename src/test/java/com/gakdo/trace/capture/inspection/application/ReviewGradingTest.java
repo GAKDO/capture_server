@@ -76,7 +76,7 @@ class ReviewGradingTest {
         grading = new GradingService(defects, mock(DefectMatchRepository.class), mock(FaceAlignmentRepository.class),
                 grades, events, true);
         reviews = new ReviewService(sets, defects, mock(ReviewQueueRepository.class), grading,
-                mock(InspectionQueryService.class));
+                mock(InspectionQueryService.class), mock(FaceAlignmentRepository.class));
     }
 
     @Test

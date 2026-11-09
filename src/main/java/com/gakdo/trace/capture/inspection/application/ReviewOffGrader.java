@@ -1,5 +1,6 @@
 package com.gakdo.trace.capture.inspection.application;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 
@@ -17,6 +18,7 @@ import com.gakdo.trace.capture.inspection.domain.DefectSource;
 
 /**
  * 검수를 끄고(REVIEW_REQUIRED=false) 다시 띄우면, 검수를 기다리던 세트에 바로 등급을 매긴다.
+ * 후보 없는 세트 기다리기(REVIEW_HOLD_EMPTY=false)를 끄고 다시 띄우면 AI 후보 없이 기다리던 세트에도 매긴다(11/9).
  * 등급은 탐지·정합·검수 완료 때만 매기므로, 이미 결과가 다 온 채 검수를 기다리던 세트는 스위치만 바꿔서는 다시 매겨지지 않는다.
  * 그때까지 저장한 결정은 그대로 쓴다(기각한 후보는 빠지고, 정하지 않은 후보는 흠집으로 센다). 세트마다 따로 잠가 하나가 실패해도 나머지는 계속한다.
  */
@@ -42,11 +44,17 @@ public class ReviewOffGrader {
 
     /** @return 등급을 매긴 세트 수 */
     public int gradeStuck() {
-        if (grading.isReviewRequired()) {
-            return 0;
+        EnumSet<SetStatus> open = EnumSet.of(SetStatus.UPLOADED, SetStatus.INSPECTED);
+        List<String> ids = new ArrayList<>();
+        if (!grading.isReviewRequired()) {
+            ids.addAll(sets.findStuckInReview(open, Quality.UNJUDGEABLE, DefectSource.AUTO));
         }
-        List<String> ids = sets.findStuckInReview(EnumSet.of(SetStatus.UPLOADED, SetStatus.INSPECTED),
-                Quality.UNJUDGEABLE, DefectSource.AUTO);
+        // 후보 없는 세트 기다리기(REVIEW_HOLD_EMPTY)를 끄면 그동안 기다리던 세트도 바로 등급을 매긴다(11/9).
+        // 후보가 남은 세트는 gradeIfReady가 그대로 검수 대기로 둔다
+        if (!grading.isHoldEmpty()) {
+            sets.findWaitingForGrade(open, Quality.UNJUDGEABLE).stream()
+                    .filter(id -> !ids.contains(id)).forEach(ids::add);
+        }
         if (ids.isEmpty()) {
             return 0;
         }

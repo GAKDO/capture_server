@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,6 +24,9 @@ import com.gakdo.trace.capture.inspection.api.InspectionDtos.DetectionBatchReque
 import com.gakdo.trace.capture.inspection.api.InspectionDtos.DetectionBatchResponse;
 import com.gakdo.trace.capture.inspection.api.InspectionDtos.DefectReviewQueue;
 import com.gakdo.trace.capture.inspection.api.InspectionDtos.DefectReviewRequest;
+import com.gakdo.trace.capture.inspection.api.InspectionDtos.HumanDefectRequest;
+import com.gakdo.trace.capture.comparison.domain.DefectClass;
+import com.gakdo.trace.capture.inspection.application.ReviewService.HumanDefect;
 import com.gakdo.trace.capture.inspection.application.DetectionService;
 import com.gakdo.trace.capture.inspection.application.DetectionService.Detection;
 import com.gakdo.trace.capture.inspection.application.InspectionQueryService;
@@ -108,5 +112,24 @@ public class InspectionController {
             @PathVariable @Pattern(regexp = PublicIds.PATTERN) String checkpointId,
             @RequestHeader("Idempotency-Key") @Size(min = 8, max = 128) String idempotencyKey) {
         return reviews.complete(Caller.from(jwt), jwt.getSubject(), checkpointId, idempotencyKey);
+    }
+
+    /** AI가 놓친 흠집 직접 추가(11/9). */
+    @PostMapping("/api/v1/captures/checkpoints/{checkpointId}/reviews/additions")
+    public ResponseEntity<InspectionView> addHumanDefect(@AuthenticationPrincipal Jwt jwt,
+            @PathVariable @Pattern(regexp = PublicIds.PATTERN) String checkpointId,
+            @Valid @RequestBody HumanDefectRequest request) {
+        HumanDefect defect = new HumanDefect(request.face(), request.light(), request.camera(),
+                DefectClass.fromCode(request.defectClass()), request.polygon());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(reviews.add(Caller.from(jwt), jwt.getSubject(), checkpointId, defect));
+    }
+
+    /** 직접 추가한 흠집 지우기(11/9). */
+    @DeleteMapping("/api/v1/captures/checkpoints/{checkpointId}/reviews/additions/{defectId}")
+    public InspectionView deleteHumanDefect(@AuthenticationPrincipal Jwt jwt,
+            @PathVariable @Pattern(regexp = PublicIds.PATTERN) String checkpointId,
+            @PathVariable @Pattern(regexp = PublicIds.PATTERN) String defectId) {
+        return reviews.remove(Caller.from(jwt), jwt.getSubject(), checkpointId, defectId);
     }
 }
