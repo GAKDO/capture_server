@@ -50,4 +50,17 @@ public interface CaptureSetRepository extends JpaRepository<CaptureSet, Long> {
               and s.id = (select max(s2.id) from CaptureSet s2 where s2.checkpointId = s.checkpointId)
             """)
     List<String> findStuckInReview(Collection<SetStatus> open, Quality unjudgeable, DefectSource auto);
+
+    /**
+     * AI 후보 없이 검수를 기다리는 세트 ID(11/9 REVIEW_HOLD_EMPTY): 시점의 가장 최근 세트 중 촬영 완료·등급 전·검수 미완료이고 AUTO 흠집이
+     * 하나도 없는 것. 이 설정을 끄고 다시 띄울 때 등급을 매겨 대기 목록에서 사라진 채 남지 않게 한다(ReviewOffGrader).
+     */
+    @Query("""
+            select s.publicId from CaptureSet s
+            where s.status in :open and s.reviewCompletedAt is null and s.completedAt is not null
+              and (s.quality is null or s.quality <> :unjudgeable)
+              and s.id = (select max(s2.id) from CaptureSet s2 where s2.checkpointId = s.checkpointId)
+              and not exists (select d.id from Defect d where d.photo.captureSet = s and d.source = :auto)
+            """)
+    List<String> findWaitingWithoutCandidates(Collection<SetStatus> open, Quality unjudgeable, DefectSource auto);
 }

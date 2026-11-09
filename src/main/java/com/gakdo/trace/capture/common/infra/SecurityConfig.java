@@ -58,7 +58,11 @@ public class SecurityConfig {
                         // 사람 검수(11/8): 관리자만
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/reviews").hasRole(ADMIN)
                         .requestMatchers(HttpMethod.POST, "/api/v1/captures/checkpoints/*/reviews",
-                                "/api/v1/captures/checkpoints/*/reviews/complete")
+                                "/api/v1/captures/checkpoints/*/reviews/complete",
+                                "/api/v1/captures/checkpoints/*/reviews/additions")
+                        .hasRole(ADMIN)
+                        // 놓친 흠집 직접 지우기(11/9): 관리자만
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/captures/checkpoints/*/reviews/additions/*")
                         .hasRole(ADMIN)
                         // 시점·세트·부스 범위는 컨트롤러가 Caller로 다시 본다(gateway는 역할까지만, decisions.md 11/2)
                         .anyRequest().denyAll())

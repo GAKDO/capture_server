@@ -36,8 +36,24 @@ class ReviewOffGraderTest {
     @DisplayName("검수를 켠 채로는 기다리던 세트를 건드리지 않는다")
     void reviewOnDoesNothing() {
         when(grading.isReviewRequired()).thenReturn(true);
+        when(grading.isHoldEmpty()).thenReturn(true);
 
         assertThat(grader.gradeStuck()).isZero();
+        verify(sets, never()).findStuckInReview(any(), any(), any());
+        verify(sets, never()).findWaitingWithoutCandidates(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("후보 없는 세트 기다리기를 끄면 AI 후보 없이 검수를 기다리던 세트에 등급을 매긴다(11/9)")
+    void holdEmptyOffGradesWaitingEmptySets() {
+        when(grading.isReviewRequired()).thenReturn(true);
+        when(grading.isHoldEmpty()).thenReturn(false);
+        CaptureSet empty = mock(CaptureSet.class);
+        when(sets.findWaitingWithoutCandidates(any(), any(), any())).thenReturn(List.of("e"));
+        when(sets.findForUpdate("e")).thenReturn(Optional.of(empty));
+        when(grading.gradeIfReady(empty)).thenReturn(true);
+
+        assertThat(grader.gradeStuck()).isEqualTo(1);
         verify(sets, never()).findStuckInReview(any(), any(), any());
     }
 
