@@ -24,7 +24,13 @@ public final class Judgeability {
      * @param uploaded 올라간 사진만(완료 때 저장소에서 확인된 것)
      * @param aligned  정합에 성공한 사진인가
      */
-    public record PhotoState(Face face, Camera camera, boolean uploaded, boolean qualityOk, boolean aligned) {
+    public record PhotoState(Face face, Camera camera, boolean uploaded, boolean qualityOk, boolean aligned,
+            String alignFailure) {
+
+        /** 정합 실패 사유를 모를 때(테스트·예전 사진). */
+        public PhotoState(Face face, Camera camera, boolean uploaded, boolean qualityOk, boolean aligned) {
+            this(face, camera, uploaded, qualityOk, aligned, null);
+        }
     }
 
     /** 판정 불가 면과 사람이 읽는 사유(면 순서). */
@@ -34,6 +40,7 @@ public final class Judgeability {
 
         Map<Face, Set<Camera>> shot = new EnumMap<>(Face.class);
         Map<Face, Set<Camera>> usable = new EnumMap<>(Face.class);
+        Map<Face, Set<String>> failures = new EnumMap<>(Face.class);
         for (PhotoState p : photos) {
             if (!p.uploaded() || skipped.containsKey(p.face())) {
                 continue;
@@ -41,14 +48,17 @@ public final class Judgeability {
             shot.computeIfAbsent(p.face(), f -> EnumSet.noneOf(Camera.class)).add(p.camera());
             if (p.aligned() && p.qualityOk()) {
                 usable.computeIfAbsent(p.face(), f -> EnumSet.noneOf(Camera.class)).add(p.camera());
+            } else if (!p.aligned() && p.alignFailure() != null) {
+                failures.computeIfAbsent(p.face(), f -> new TreeSet<>()).add(p.alignFailure());
             }
         }
         shot.forEach((face, cameras) -> {
             Set<Camera> missing = new TreeSet<>(cameras);
             missing.removeAll(usable.getOrDefault(face, Set.of()));
             if (!missing.isEmpty()) {
+                String why = failures.containsKey(face) ? " - " + String.join(" / ", failures.get(face)) : "";
                 out.put(face, "정합 실패 또는 품질 미달(" + String.join("·", missing.stream().map(Camera::name).toList())
-                        + ")");
+                        + ")" + why);
             }
         });
         return out;

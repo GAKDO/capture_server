@@ -3,6 +3,7 @@ package com.gakdo.trace.capture.inspection.application;
 import java.time.OffsetDateTime;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.captureset.domain.Face;
+import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.common.domain.DomainException;
 import com.gakdo.trace.capture.common.domain.ErrorCode;
@@ -25,8 +27,10 @@ import com.gakdo.trace.capture.inspection.domain.Defect;
 import com.gakdo.trace.capture.inspection.domain.DefectGroups;
 import com.gakdo.trace.capture.inspection.domain.DefectMatchRecord;
 import com.gakdo.trace.capture.inspection.domain.GradeResult;
+import com.gakdo.trace.capture.inspection.domain.Judgeability;
 import com.gakdo.trace.capture.inspection.infra.DefectMatchRepository;
 import com.gakdo.trace.capture.inspection.infra.DefectRepository;
+import com.gakdo.trace.capture.inspection.infra.FaceAlignmentRepository;
 import com.gakdo.trace.capture.inspection.infra.GradeResultRepository;
 
 /**
@@ -41,19 +45,29 @@ public class InspectionQueryService {
     private final DefectRepository defects;
     private final DefectMatchRepository matches;
     private final GradeResultRepository grades;
+    private final FaceAlignmentRepository alignments;
 
     public InspectionQueryService(CaptureSetRepository sets, DefectRepository defects, DefectMatchRepository matches,
-            GradeResultRepository grades) {
+            GradeResultRepository grades, FaceAlignmentRepository alignments) {
         this.sets = sets;
         this.defects = defects;
         this.matches = matches;
         this.grades = grades;
+        this.alignments = alignments;
     }
 
-    /** photoDefects는 계약의 선택 필드(11/3)라 빠른 검사 세트일 때만 싣는다(그때 defects는 빈 배열). */
+    /**
+     * photoDefects(계약 선택 필드): 빠른 검사는 흠집이 여기에만 있고(defects 빈 배열), 전체 검사(11/9)는 원본 px를 아는 흠집을 모두 싣는다
+     * (정합에 성공한 흠집은 defects에도 같은 id로 있다). profile·unjudgeableFaces는 11/9 선택 필드로 늘 싣는다.
+     */
     public record InspectionView(String checkpointId, String grade, String ruleVersion, List<String> reasons,
             List<DefectView> defects,
-            @JsonInclude(JsonInclude.Include.NON_NULL) List<PhotoDefectView> photoDefects, ReviewSummary review) {
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<PhotoDefectView> photoDefects, ReviewSummary review,
+            String profile, List<UnjudgeableFace> unjudgeableFaces) {
+    }
+
+    /** 판정 불가 면과 사람이 읽는 사유(contracts Inspection.unjudgeableFaces). */
+    public record UnjudgeableFace(String face, String reason) {
     }
 
     /** polygon은 늘 표준 좌표 px. */
@@ -118,20 +132,22 @@ public class InspectionQueryService {
         ReviewSummary review = summary(set, all, grade);
         // 고객에게는 사람이 흠집 아님으로 정한 후보를 보이지 않는다
         List<Defect> shown = caller.isAdmin() ? all : all.stream().filter(d -> !d.isDismissed()).toList();
+        List<UnjudgeableFace> unjudgeable = unjudgeableFaces(set);
+        // 미디어 조회(/media)와 같은 공개 범위: 완료 때 올라간 사진만, 건너뛴 면은 뺀다(등급 계산과 같음).
+        Set<Face> skipped = set.getSkippedFaces().keySet();
+        List<Defect> visible = shown.stream()
+                .filter(d -> d.getPhoto().isUploaded() && !skipped.contains(d.getPhoto().getFace()))
+                .filter(d -> d.getPhotoPolygon() != null && d.getPhotoPolygon().size() >= 3)
+                .toList();
+        Map<String, String> groupOf = groupIds(set, visible);
+        List<PhotoDefectView> photo = visible.stream()
+                .map(d -> new PhotoDefectView(d.getPublicId(), d.getPhoto().getFace().name(),
+                        d.getPhoto().getLight().name(), d.getPhoto().getCamera().name(), d.getDefectClass().code(),
+                        d.getPhotoPolygon(), d.getConfidence(), d.getModelVersion(),
+                        groupOf.getOrDefault(d.getPublicId(), d.getPublicId()), ReviewView.of(d)))
+                .toList();
         if (set.isQuick()) {
-            // 미디어 조회(/media)와 같은 공개 범위: 완료 때 올라간 사진만, 건너뛴 면은 뺀다(등급 계산과 같음).
-            Set<Face> skipped = set.getSkippedFaces().keySet();
-            List<Defect> visible = shown.stream()
-                    .filter(d -> d.getPhoto().isUploaded() && !skipped.contains(d.getPhoto().getFace()))
-                    .toList();
-            Map<String, String> groupOf = groupIds(set, visible);
-            List<PhotoDefectView> photo = visible.stream()
-                    .map(d -> new PhotoDefectView(d.getPublicId(), d.getPhoto().getFace().name(),
-                            d.getPhoto().getLight().name(), d.getPhoto().getCamera().name(), d.getDefectClass().code(),
-                            d.getPhotoPolygon(), d.getConfidence(), d.getModelVersion(),
-                            groupOf.getOrDefault(d.getPublicId(), d.getPublicId()), ReviewView.of(d)))
-                    .toList();
-            return view(checkpointId, grade, List.of(), photo, review);
+            return view(checkpointId, grade, List.of(), photo, review, set, unjudgeable);
         }
         List<DefectView> list = shown.stream()
                 .filter(d -> d.getPolygon() != null)
@@ -142,7 +158,33 @@ public class InspectionQueryService {
                             d.getSource().name(), match, ReviewView.of(d));
                 })
                 .toList();
-        return view(checkpointId, grade, list, null, review);
+        // 전체 검사(11/9): 사진 위 폴리곤으로 AI가 무엇을 봤는지 보이도록 원본 px 흠집도 함께 싣는다(정합 실패 면의 흠집 포함)
+        return view(checkpointId, grade, list, photo, review, set, unjudgeable);
+    }
+
+    /**
+     * 판정 불가 면(등급 전에도 계산). 전체 검사는 정합 결과를 받은 뒤(INSPECTED·GRADED)에만 정합 실패를 따지고, 그 전에는 건너뛴 면만 보인다.
+     * 빠른 검사는 정합을 쓰지 않으므로 건너뛴 면만이다(GradingService.gradeQuickIfReady와 같은 문장).
+     */
+    List<UnjudgeableFace> unjudgeableFaces(CaptureSet set) {
+        Map<Face, String> out;
+        boolean inspected = set.getStatus() == SetStatus.INSPECTED || set.getStatus() == SetStatus.GRADED;
+        if (!set.isQuick() && inspected) {
+            Set<Long> aligned = new HashSet<>();
+            alignments.findBySet(set).forEach(a -> aligned.add(a.getPhoto().getId()));
+            out = Judgeability.unjudgeable(GradingService.states(set, aligned), set.getSkippedFaces());
+        } else {
+            out = new java.util.EnumMap<>(Face.class);
+            Map<Face, String> target = out;
+            set.getSkippedFaces().forEach((face, reason) -> target.put(face, "건너뜀: " + reason));
+        }
+        return out.entrySet().stream()
+                .map(e -> new UnjudgeableFace(e.getKey().name(), cut(e.getValue())))
+                .toList();
+    }
+
+    private static String cut(String text) {
+        return text.length() > 500 ? text.substring(0, 500) : text;
     }
 
     /** 흠집 id → 같은 면·카메라에서 겹치는 묶음의 대표 id(첫 흠집). 등급 계산(GradingService.quickGroups)과 같은 묶기. */
@@ -190,9 +232,11 @@ public class InspectionQueryService {
     }
 
     private static InspectionView view(String checkpointId, Optional<GradeResult> grade, List<DefectView> list,
-            List<PhotoDefectView> photo, ReviewSummary review) {
+            List<PhotoDefectView> photo, ReviewSummary review, CaptureSet set, List<UnjudgeableFace> unjudgeable) {
+        String profile = set.getProfile().name();
         return grade.map(g -> new InspectionView(checkpointId, g.getGrade().name(), g.getRuleVersion(),
-                g.getReasons(), list, photo, review))
-                .orElseGet(() -> new InspectionView(checkpointId, null, null, List.of(), list, photo, review));
+                g.getReasons(), list, photo, review, profile, unjudgeable))
+                .orElseGet(() -> new InspectionView(checkpointId, null, null, List.of(), list, photo, review, profile,
+                        unjudgeable));
     }
 }

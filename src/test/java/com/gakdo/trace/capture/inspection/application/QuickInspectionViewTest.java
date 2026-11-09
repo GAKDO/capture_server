@@ -29,6 +29,7 @@ import com.gakdo.trace.capture.inspection.domain.Defect;
 import com.gakdo.trace.capture.comparison.domain.DefectClass;
 import com.gakdo.trace.capture.inspection.infra.DefectMatchRepository;
 import com.gakdo.trace.capture.inspection.infra.DefectRepository;
+import com.gakdo.trace.capture.inspection.infra.FaceAlignmentRepository;
 import com.gakdo.trace.capture.inspection.infra.GradeResultRepository;
 
 /** 빠른 검사 결과 조회: photoDefects는 /media와 같은 범위(완료 때 올라간 사진, 건너뛰지 않은 면)만 싣는다. */
@@ -58,7 +59,8 @@ class QuickInspectionViewTest {
                 Defect.fromBooth(photo(set, Face.TOP), DefectClass.SCRATCH, BOX, 0.9, "v"),
                 Defect.fromBooth(photo(set, Face.BOT), DefectClass.SCRATCH, BOX, 0.9, "v")));
 
-        var view = new InspectionQueryService(sets, defects, mock(DefectMatchRepository.class), grades)
+        var view = new InspectionQueryService(sets, defects, mock(DefectMatchRepository.class), grades,
+                mock(FaceAlignmentRepository.class))
                 .get(ADMIN, CHECKPOINT);
 
         assertThat(view.defects()).isEmpty();

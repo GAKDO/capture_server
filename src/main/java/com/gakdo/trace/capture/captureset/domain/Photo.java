@@ -61,6 +61,10 @@ public class Photo {
     @Column(name = "quality_ok", nullable = false)
     private boolean qualityOk = true;
 
+    /** worker가 보낸 정합 실패 사유(없으면 null). 판정 불가 면 사유 문장에 붙인다(11/9). */
+    @Column(name = "align_failure", length = 500)
+    private String alignFailure;
+
     @Column(name = "taken_at", nullable = false, updatable = false)
     private OffsetDateTime takenAt;
 
@@ -95,6 +99,17 @@ public class Photo {
     void markUploaded(boolean value, OffsetDateTime now) {
         this.uploaded = value;
         this.updatedAt = now;
+    }
+
+    /** 정합 실패 사유를 남긴다. 빈 사유는 "사유 없음"으로, 500자를 넘으면 자른다. */
+    public void markAlignFailed(String reason, OffsetDateTime now) {
+        String text = reason == null || reason.isBlank() ? "사유 없음" : reason.strip();
+        this.alignFailure = text.length() > 500 ? text.substring(0, 500) : text;
+        this.updatedAt = now;
+    }
+
+    public String getAlignFailure() {
+        return alignFailure;
     }
 
     public Long getId() {
