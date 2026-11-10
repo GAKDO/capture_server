@@ -1,6 +1,7 @@
 package com.gakdo.trace.capture.inspection.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 
@@ -100,5 +101,14 @@ class SettlementRulesTest {
         assertThat(SettlementRules.charge(crack, M2).amount()).isEqualTo(154_000);
         assertThat(SettlementRules.charge(crack, cheap).amount()).isEqualTo(75_000);
         assertThat(cheap.cap()).isEqualTo(150_000);
+    }
+
+    @Test
+    @DisplayName("기준가가 0 이하이거나 1억 원을 넘으면 설정을 거부해 금액이 넘치지 않는다")
+    void rejectsOutOfRangeBasePrice() {
+        assertThatThrownBy(() -> new SettlementRules.Pricing(0)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new SettlementRules.Pricing(20_000_000_000L))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(new SettlementRules.Pricing(SettlementRules.MAX_BASE_PRICE).cap()).isEqualTo(15_000_000);
     }
 }

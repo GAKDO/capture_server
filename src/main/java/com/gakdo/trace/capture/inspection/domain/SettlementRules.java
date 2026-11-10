@@ -41,11 +41,14 @@ public final class SettlementRules {
     private SettlementRules() {
     }
 
+    /** 기준가 상한(1억 원). 금액·합계를 int로 내보내므로 넘치지 않게 막는다 */
+    public static final long MAX_BASE_PRICE = 100_000_000L;
+
     /** 기기 기준가(원). 금액은 기준가 × 비율을 천 원 단위로 반올림한다. */
     public record Pricing(long basePrice) {
         public Pricing {
-            if (basePrice <= 0) {
-                throw new IllegalArgumentException("기준가는 0보다 커야 합니다");
+            if (basePrice <= 0 || basePrice > MAX_BASE_PRICE) {
+                throw new IllegalArgumentException("기준가는 1원 이상 1억 원 이하여야 합니다: " + basePrice);
             }
         }
 
@@ -145,7 +148,7 @@ public final class SettlementRules {
     }
 
     private static Outcome total(List<Line> lines, int cap, List<String> notes) {
-        int subtotal = lines.stream().mapToInt(Line::amount).sum();
+        int subtotal = (int) Math.min(Integer.MAX_VALUE, lines.stream().mapToLong(Line::amount).sum());
         int total = Math.min(subtotal, cap);
         List<String> out = new ArrayList<>(notes);
         if (total < subtotal) {
