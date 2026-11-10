@@ -82,7 +82,7 @@ public final class SettlementRules {
     }
 
     /**
-     * 빠른 검사: 위치 비교가 없어(기기를 놓는 자리가 매번 다름) 면·종류별 흠집 수가 앞 시점보다 늘어난 만큼만 신규로 본다.
+     * 빠른 검사(또는 앞 시점이 빠른 검사): 위치 비교가 없어(기기를 놓는 자리가 매번 다름) 면·종류별 흠집 수가 앞 시점보다 늘어난 만큼만 신규로 본다.
      * 늘어난 수만큼 그 면·종류에서 가장 긴(모르면 앞쪽) 묶음을 고른다. 고객에게 불리하지 않게 "늘어난 수"를 넘겨 매기지 않는다.
      */
     public static Outcome countDiff(List<Item> current, List<Item> previous, int cap) {
@@ -100,7 +100,7 @@ public final class SettlementRules {
             kept += items.size() - extra;
         }
         List<String> notes = new ArrayList<>();
-        notes.add("빠른 검사라 위치 대신 면·종류별 흠집 수가 앞 시점보다 늘어난 만큼만 신규로 계산");
+        notes.add("위치 비교 대신 면·종류별 흠집 수가 앞 시점보다 늘어난 만큼만 신규로 계산");
         if (kept > 0) {
             notes.add("앞 시점과 같은 수만큼의 흠집 " + kept + "개는 빼고 계산");
         }

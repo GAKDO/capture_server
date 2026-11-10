@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.gakdo.trace.capture.captureset.domain.CaptureProfile;
 import com.gakdo.trace.capture.captureset.domain.CaptureSet;
 import com.gakdo.trace.capture.common.infra.Caller;
 import com.gakdo.trace.capture.inspection.domain.CheckpointKind;
@@ -76,24 +75,23 @@ public class SettlementService {
         defects.findBySet(gradedSet).forEach(d -> byId.put(d.getPublicId(), d));
         List<DefectGroups.Group> groups = grading.gradedGroups(gradedSet);
 
-        boolean compared = !gradedSet.isQuick() && grades
-                .findFirstByCaptureSetRentalIdAndCaptureSetProfileAndCheckpointIdNotOrderByUpdatedAtDesc(
-                        set.getRentalId(), CaptureProfile.FULL, checkpointId).isPresent();
+        // 기준은 바로 앞 시점(보통 수령). 앞 시점도 전체 검사일 때만 위치 비교(NEW)를 쓴다. 출고가 전체·수령이 빠른 검사면
+        // 위치 비교는 출고와 견주게 되어 배송 중 손상까지 NEW가 되므로, 그때는 수령과 면·종류별 수로 견준다.
+        Optional<CaptureSet> previousSet = grades
+                .findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(set.getRentalId(), checkpointId)
+                .map(GradeResult::getCaptureSet);
+        boolean compared = !gradedSet.isQuick() && previousSet.map(p -> !p.isQuick()).orElse(false);
         SettlementRules.Outcome outcome;
         if (compared) {
             List<SettlementRules.Item> fresh = groups.stream().filter(g -> Boolean.TRUE.equals(g.isNew()))
                     .map(g -> item(g, byId)).toList();
             outcome = SettlementRules.compared(fresh, groups.size() - fresh.size(), cap);
         } else {
-            List<SettlementRules.Item> previous = grades
-                    .findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(set.getRentalId(), checkpointId)
-                    .map(GradeResult::getCaptureSet)
-                    .map(prev -> {
-                        Map<String, Defect> prevById = new HashMap<>();
-                        defects.findBySet(prev).forEach(d -> prevById.put(d.getPublicId(), d));
-                        return grading.gradedGroups(prev).stream().map(g -> item(g, prevById)).toList();
-                    })
-                    .orElse(List.of());
+            List<SettlementRules.Item> previous = previousSet.map(prev -> {
+                Map<String, Defect> prevById = new HashMap<>();
+                defects.findBySet(prev).forEach(d -> prevById.put(d.getPublicId(), d));
+                return grading.gradedGroups(prev).stream().map(g -> item(g, prevById)).toList();
+            }).orElse(List.of());
             outcome = SettlementRules.countDiff(groups.stream().map(g -> item(g, byId)).toList(), previous, cap);
         }
         List<LineView> lines = outcome.lines().stream()

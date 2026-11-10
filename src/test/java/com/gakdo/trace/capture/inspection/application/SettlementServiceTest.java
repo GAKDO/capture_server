@@ -32,6 +32,7 @@ import com.gakdo.trace.capture.common.infra.Caller;
 import com.gakdo.trace.capture.comparison.domain.DefectClass;
 import com.gakdo.trace.capture.inspection.application.SettlementService.SettlementView;
 import com.gakdo.trace.capture.inspection.domain.Defect;
+import com.gakdo.trace.capture.inspection.domain.DefectGroups;
 import com.gakdo.trace.capture.inspection.domain.Grade;
 import com.gakdo.trace.capture.inspection.domain.GradeResult;
 import com.gakdo.trace.capture.inspection.infra.DefectMatchRepository;
@@ -88,6 +89,39 @@ class SettlementServiceTest {
     }
 
     @Test
+    @DisplayName("반납이 전체 검사여도 앞 시점(수령)이 빠른 검사면 출고와 위치 비교하지 않고 수령과 수로 견줘 배송 중 손상을 빼다")
+    void fullReturnAfterQuickReceiptComparesWithReceipt() {
+        CaptureSet rcv = completedQuickSet("check-00000000000002");
+        CaptureSet ret = completedSet("check-00000000000003", CaptureProfile.FULL);
+        graded(ret, Grade.B, 2);
+        GradeResult prev = new GradeResult(rcv.getCheckpointId());
+        prev.recordGrade(rcv, Grade.B, "grade-rules-v1", List.of(), List.of());
+        when(grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(anyString(), anyString()))
+                .thenReturn(Optional.of(prev));
+        // 출고는 전체 검사였다(예전 코드는 이것만 보고 위치 비교를 썼다)
+        CaptureSet out = completedSet("check-00000000000001", CaptureProfile.FULL);
+        GradeResult outGrade = new GradeResult(out.getCheckpointId());
+        outGrade.recordGrade(out, Grade.A, "grade-rules-v1", List.of(), List.of());
+        when(grades.findFirstByCaptureSetRentalIdAndCaptureSetProfileAndCheckpointIdNotOrderByUpdatedAtDesc(anyString(),
+                any(), anyString())).thenReturn(Optional.of(outGrade));
+        // 반납 전체 검사의 위치 비교는 출고와 견줘 배송 중 생긴 찍힘을 NEW로 본다. 수령(빠른 검사)에 이미 같은 찍힘이 있다
+        GradingService grading = mock(GradingService.class);
+        when(grading.gradedGroups(ret)).thenReturn(List.of(
+                new DefectGroups.Group(Face.TOP, DefectClass.DENT, 6.0, true, List.of("ret-dent"))));
+        when(grading.gradedGroups(rcv)).thenReturn(List.of(
+                new DefectGroups.Group(Face.TOP, DefectClass.DENT, 6.0, null, List.of("rcv-dent"))));
+        when(defects.findBySet(any())).thenReturn(List.of());
+        SettlementService svc = new SettlementService(mock(CaptureSetRepository.class), grades, defects, grading,
+                300_000);
+
+        SettlementView view = svc.get(ADMIN, ret.getCheckpointId());
+
+        assertThat(view.lines()).isEmpty();
+        assertThat(view.total()).isZero();
+        assertThat(view.notes()).contains("앞 시점과 같은 수만큼의 흠집 1개는 빼고 계산");
+    }
+
+    @Test
     @DisplayName("수령 시점은 배송 중 손상이라 정산하지 않는다")
     void receiptIsNotApplicable() {
         CaptureSet rcv = completedQuickSet("check-00000000000002");
@@ -122,8 +156,12 @@ class SettlementServiceTest {
     }
 
     private static CaptureSet completedQuickSet(String checkpointId) {
+        return completedSet(checkpointId, CaptureProfile.QUICK);
+    }
+
+    private static CaptureSet completedSet(String checkpointId, CaptureProfile profile) {
         CaptureSet set = CaptureSet.open("rental-000000000000001", checkpointId, CaptureSource.BOOTH,
-                "booth-1", null, CaptureProfile.QUICK, specs());
+                "booth-1", null, profile, specs());
         Set<String> present = new HashSet<>();
         set.getPhotos().forEach(p -> present.add(p.getPublicId()));
         set.complete(present, Map.of(), "key-" + present.hashCode(), SHA);
