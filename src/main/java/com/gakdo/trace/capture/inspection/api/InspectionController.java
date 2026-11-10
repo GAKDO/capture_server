@@ -35,6 +35,8 @@ import com.gakdo.trace.capture.inspection.application.MediaService;
 import com.gakdo.trace.capture.inspection.application.MediaService.MediaView;
 import com.gakdo.trace.capture.inspection.application.ReviewService;
 import com.gakdo.trace.capture.inspection.application.ReviewService.Decision;
+import com.gakdo.trace.capture.inspection.application.SettlementService;
+import com.gakdo.trace.capture.inspection.application.SettlementService.SettlementView;
 import com.gakdo.trace.capture.inspection.domain.ReviewStatus;
 
 import jakarta.validation.Valid;
@@ -52,13 +54,15 @@ public class InspectionController {
     private final InspectionQueryService inspections;
     private final MediaService media;
     private final ReviewService reviews;
+    private final SettlementService settlements;
 
     public InspectionController(DetectionService detections, InspectionQueryService inspections, MediaService media,
-            ReviewService reviews) {
+            ReviewService reviews, SettlementService settlements) {
         this.detections = detections;
         this.inspections = inspections;
         this.media = media;
         this.reviews = reviews;
+        this.settlements = settlements;
     }
 
     @PostMapping("/api/v1/captures/sets/{setId}/detections")
@@ -82,6 +86,13 @@ public class InspectionController {
     public InspectionView getCheckpointInspection(@AuthenticationPrincipal Jwt jwt,
             @PathVariable @Pattern(regexp = PublicIds.PATTERN) String checkpointId) {
         return inspections.get(Caller.from(jwt), checkpointId);
+    }
+
+    /** 반납 정산서(11/10): 반납 시점 신규 흠집 → 규칙표 차감액. */
+    @GetMapping("/api/v1/captures/checkpoints/{checkpointId}/settlement")
+    public SettlementView getCheckpointSettlement(@AuthenticationPrincipal Jwt jwt,
+            @PathVariable @Pattern(regexp = PublicIds.PATTERN) String checkpointId) {
+        return settlements.get(Caller.from(jwt), checkpointId);
     }
 
     @GetMapping("/api/v1/captures/checkpoints/{checkpointId}/media")

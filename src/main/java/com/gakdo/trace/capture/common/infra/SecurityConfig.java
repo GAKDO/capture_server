@@ -52,7 +52,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/sets/*").hasAnyRole(ADMIN, CUSTOMER)
                         .requestMatchers(HttpMethod.POST, "/api/v1/captures/sets/*/detections").hasRole(BOOTH)
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/checkpoints/*/inspection",
-                                "/api/v1/captures/checkpoints/*/media")
+                                "/api/v1/captures/checkpoints/*/media", "/api/v1/captures/checkpoints/*/settlement")
                         .hasAnyRole(ADMIN, CUSTOMER)
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/benchmarks").hasRole(ADMIN)
                         // 사람 검수(11/8): 관리자만
