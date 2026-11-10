@@ -35,18 +35,16 @@ public class ModelMetrics {
             return List.of();
         }
         List<ModelMetric> out = new ArrayList<>();
-        for (String entry : config.split(",")) {
-            String item = entry.trim();
-            if (item.isEmpty()) {
-                continue;
+        List<String> items = java.util.Arrays.stream(config.split(",")).map(String::trim)
+                .filter(item -> !item.isEmpty()).toList();
+        for (String item : items) {
+            if (out.size() == MAX_MODELS) {
+                break;
             }
             try {
                 out.add(parseOne(item));
             } catch (IllegalArgumentException e) {
                 log.warn("MODEL_METRICS 항목을 건너뜁니다: {} ({})", item, e.getMessage());
-            }
-            if (out.size() == MAX_MODELS) {
-                break;
             }
         }
         return Collections.unmodifiableList(out);

@@ -453,8 +453,17 @@ public class GradingService {
         long before = countNonStain(quickGroups(notDismissed(defects.findBySet(prevSet)), prevFaces));
         long now = countNonStain(current);
         long diff = now - before;
-        String change = diff > 0 ? diff + "개 늘어남" : diff < 0 ? (-diff) + "개 줄어듦" : "같음";
-        return "앞 시점 비교(개수만): 흠집 " + before + "개 → " + now + "개(" + change + ", 오염 제외)";
+        return "앞 시점 비교(개수만): 흠집 " + before + "개 → " + now + "개(" + change(diff) + ", 오염 제외)";
+    }
+
+    private static String change(long diff) {
+        if (diff > 0) {
+            return diff + "개 늘어남";
+        }
+        if (diff < 0) {
+            return (-diff) + "개 줄어듦";
+        }
+        return "같음";
     }
 
     private static long countNonStain(List<DefectGroups.Group> groups) {

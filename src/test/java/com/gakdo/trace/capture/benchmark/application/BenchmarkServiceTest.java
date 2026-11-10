@@ -45,7 +45,7 @@ class BenchmarkServiceTest {
         assertThat(b.boothTotalMs()).isEqualTo(91_500);
         assertThat(b.detectionsReceivedAt()).isNull();
         assertThat(b.completedToGradedMs()).isEqualTo(32_000L);
-        assertThat(b.gradedAt().toString()).isEqualTo("2026-11-09T05:03:37Z");
+        assertThat(b.gradedAt()).hasToString("2026-11-09T05:03:37Z");
     }
 
     @Test
@@ -53,7 +53,8 @@ class BenchmarkServiceTest {
     void adminOnly() {
         BenchmarkRepository repository = mock(BenchmarkRepository.class);
         Caller booth = new Caller("BOOTH", "booth-01", null, List.of());
-        assertThatThrownBy(() -> new BenchmarkService(repository).recent(booth, null, 20))
+        BenchmarkService service = new BenchmarkService(repository);
+        assertThatThrownBy(() -> service.recent(booth, null, 20))
                 .isInstanceOf(DomainException.class);
         verifyNoInteractions(repository);
     }

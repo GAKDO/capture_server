@@ -56,7 +56,8 @@ class PurgeEventListenerTest {
     @Test
     @DisplayName("시리얼이 TEST-가 아니면 아무것도 지우지 않고 DLX로 보낸다")
     void refusesRealSerial() {
-        assertThatThrownBy(() -> listener.handle(event("C02REAL0001")))
+        var real = event("C02REAL0001");
+        assertThatThrownBy(() -> listener.handle(real))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
         verify(store, never()).deleteCheckpoint(any());
     }
@@ -64,7 +65,8 @@ class PurgeEventListenerTest {
     @Test
     @DisplayName("JSON이 깨진 메시지는 DLX로 보낸다")
     void rejectsBrokenJson() {
-        assertThatThrownBy(() -> listener.handle("{".getBytes(StandardCharsets.UTF_8)))
+        byte[] broken = "{".getBytes(StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> listener.handle(broken))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
         verify(store, never()).deleteCheckpoint(any());
     }
@@ -73,7 +75,8 @@ class PurgeEventListenerTest {
     @DisplayName("이벤트의 렌탈이 저장된 세트의 렌탈과 다르면 지우지 않고 DLX로 보낸다")
     void refusesMismatchedRental() {
         when(store.belongsToOtherRental("Ws0HLv6QRbDILPWOcz5I2", CP)).thenReturn(true);
-        assertThatThrownBy(() -> listener.handle(event("TEST-0002")))
+        var test = event("TEST-0002");
+        assertThatThrownBy(() -> listener.handle(test))
                 .isInstanceOf(AmqpRejectAndDontRequeueException.class);
         verify(store, never()).deleteCheckpoint(any());
     }

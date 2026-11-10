@@ -213,7 +213,7 @@ class InspectionFlowIntegrationTest {
         assertThat(row.get("photoCount").asInt()).isEqualTo(BOOTH_FACES.size() * 2);
         assertThat(row.get("completedAt").isNull()).isFalse();
         assertThat(row.get("gradedAt").isNull()).isFalse();
-        assertThat(row.get("completedToGradedMs").asLong()).isGreaterThanOrEqualTo(0);
+        assertThat(row.get("completedToGradedMs").asLong()).isNotNegative();
         mvc.perform(get("/api/v1/captures/benchmarks").with(booth())).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/captures/benchmarks?limit=101").with(admin())).andExpect(status().isBadRequest());
     }

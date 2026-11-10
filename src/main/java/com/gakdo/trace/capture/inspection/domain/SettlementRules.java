@@ -87,11 +87,21 @@ public final class SettlementRules {
                 yield len < LONG_SCRATCH_MM ? line(i, p, SCRATCH_MID_BP, "긁힘 10~30mm")
                         : line(i, p, SCRATCH_LONG_BP, "긁힘 30mm 이상");
             }
-            case DENT -> len != null && len >= BIG_DENT_MM ? line(i, p, DENT_BIG_BP, "찍힘 5mm 이상")
-                    : line(i, p, DENT_SMALL_BP, len == null ? "찍힘(길이 모름) 기본" : "찍힘 5mm 미만");
+            case DENT -> dent(i, p, len);
             case CRACK -> line(i, p, CRACK_BP, "균열");
             case STAIN -> line(i, p, 0, "오염(청소로 해결)");
         };
+    }
+
+    /** 찍힘: 5mm 이상이면 큰 찍힘, 길이를 모르거나 5mm 미만이면 작은 찍힘 */
+    private static Line dent(Item i, Pricing p, Double len) {
+        if (len == null) {
+            return line(i, p, DENT_SMALL_BP, "찍힘(길이 모름) 기본");
+        }
+        if (len >= BIG_DENT_MM) {
+            return line(i, p, DENT_BIG_BP, "찍힘 5mm 이상");
+        }
+        return line(i, p, DENT_SMALL_BP, "찍힘 5mm 미만");
     }
 
     private static Line line(Item i, Pricing p, int bp, String rule) {
