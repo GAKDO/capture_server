@@ -60,7 +60,7 @@ class SettlementServiceTest {
         grades = mock(GradeResultRepository.class);
         GradingService grading = new GradingService(defects, mock(DefectMatchRepository.class),
                 mock(FaceAlignmentRepository.class), grades, mock(GradeEventPublisher.class));
-        service = new SettlementService(mock(CaptureSetRepository.class), grades, defects, grading, 300_000);
+        service = new SettlementService(mock(CaptureSetRepository.class), grades, defects, grading, 2_057_693L);
     }
 
     @Test
@@ -85,7 +85,7 @@ class SettlementServiceTest {
         assertThat(view.status()).isEqualTo("READY");
         assertThat(view.checkpointType()).isEqualTo("RET");
         assertThat(view.lines()).extracting(SettlementService.LineView::defectClass).containsExactly("dent");
-        assertThat(view.total()).isEqualTo(30_000);
+        assertThat(view.total()).isEqualTo(31_000);
         assertThat(view.grade()).isEqualTo("C");
     }
 
@@ -114,7 +114,7 @@ class SettlementServiceTest {
                 new DefectGroups.Group(Face.TOP, DefectClass.DENT, 6.0, null, List.of("rcv-dent"))));
         when(defects.findBySet(any())).thenReturn(List.of());
         SettlementService svc = new SettlementService(mock(CaptureSetRepository.class), grades, defects, grading,
-                300_000);
+                2_057_693L);
 
         SettlementView view = svc.get(ADMIN, ret.getCheckpointId());
 
@@ -143,7 +143,7 @@ class SettlementServiceTest {
         when(sets.findFirstByCheckpointIdOrderByIdDesc(ret.getCheckpointId())).thenReturn(Optional.of(ret));
         GradingService grading = new GradingService(defects, mock(DefectMatchRepository.class),
                 mock(FaceAlignmentRepository.class), grades, mock(GradeEventPublisher.class));
-        SettlementView view = new SettlementService(sets, grades, defects, grading, 300_000)
+        SettlementView view = new SettlementService(sets, grades, defects, grading, 2_057_693L)
                 .get(ADMIN, ret.getCheckpointId());
         assertThat(view.status()).isEqualTo("PENDING");
         assertThat(view.lines()).isEmpty();

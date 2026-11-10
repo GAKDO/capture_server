@@ -54,6 +54,8 @@ spring:
 app:
   commit: ${APP_COMMIT:unknown}   # 이미지에 구운 커밋 SHA. /ping 응답에 실려 배포 확인에 쓴다
   version: '@project.version@'
+  settlement:
+    base-price: ${TRACE_SETTLEMENT_BASE_PRICE:2057693}   # 반납 정산 기준가(원, 자산 대장 취득가). 금액은 이 값의 비율
   jwt:
     issuer: trace
   # MinIO(S3 API). 사진은 서버를 거치지 않고 사전 서명 URL로 직접 올라간다 (infra.env MINIO_ENDPOINT, trace-secrets MINIO_*)

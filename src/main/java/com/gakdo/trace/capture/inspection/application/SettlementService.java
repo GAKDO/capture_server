@@ -34,15 +34,15 @@ public class SettlementService {
     private final GradeResultRepository grades;
     private final DefectRepository defects;
     private final GradingService grading;
-    private final int cap;
+    private final SettlementRules.Pricing pricing;
 
     public SettlementService(CaptureSetRepository sets, GradeResultRepository grades, DefectRepository defects,
-            GradingService grading, @Value("${app.settlement.cap:300000}") int cap) {
+            GradingService grading, @Value("${app.settlement.base-price:2057693}") long basePrice) {
         this.sets = sets;
         this.grades = grades;
         this.defects = defects;
         this.grading = grading;
-        this.cap = cap;
+        this.pricing = new SettlementRules.Pricing(basePrice);
     }
 
     public record SettlementView(String checkpointId, String checkpointType, String status, String ruleVersion,
@@ -86,14 +86,14 @@ public class SettlementService {
         if (compared) {
             List<SettlementRules.Item> fresh = groups.stream().filter(g -> Boolean.TRUE.equals(g.isNew()))
                     .map(g -> item(g, byId)).toList();
-            outcome = SettlementRules.compared(fresh, groups.size() - fresh.size(), cap);
+            outcome = SettlementRules.compared(fresh, groups.size() - fresh.size(), pricing);
         } else {
             List<SettlementRules.Item> previous = previousSet.map(prev -> {
                 Map<String, Defect> prevById = new HashMap<>();
                 defects.findBySet(prev).forEach(d -> prevById.put(d.getPublicId(), d));
                 return grading.gradedGroups(prev).stream().map(g -> item(g, prevById)).toList();
             }).orElse(List.of());
-            outcome = SettlementRules.countDiff(groups.stream().map(g -> item(g, byId)).toList(), previous, cap);
+            outcome = SettlementRules.countDiff(groups.stream().map(g -> item(g, byId)).toList(), previous, pricing);
         }
         List<LineView> lines = outcome.lines().stream()
                 .map(l -> new LineView(l.defectId(), l.face().name(), l.defectClass().code(), l.lengthMm(),
@@ -114,7 +114,7 @@ public class SettlementService {
     }
 
     private SettlementView empty(String checkpointId, String type, String status, String grade, List<String> notes) {
-        return new SettlementView(checkpointId, type, status, SettlementRules.VERSION, "KRW", grade, List.of(), 0, cap,
+        return new SettlementView(checkpointId, type, status, SettlementRules.VERSION, "KRW", grade, List.of(), 0, pricing.cap(),
                 0, notes);
     }
 }
