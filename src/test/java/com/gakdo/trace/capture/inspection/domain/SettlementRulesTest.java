@@ -73,4 +73,17 @@ class SettlementRulesTest {
         assertThat(out.lines()).isEmpty();
         assertThat(out.total()).isZero();
     }
+
+    @Test
+    @DisplayName("빠른 검사에서 같은 면·종류의 수만 늘면 고객에게 유리하게 작은 흠집부터 신규로 본다")
+    void quickPicksSmallestWhenCountRises() {
+        List<Item> before = List.of(item("p1", Face.TOP, DefectClass.DENT, 6.0));
+        List<Item> now = List.of(item("big", Face.TOP, DefectClass.DENT, 6.0),
+                item("small", Face.TOP, DefectClass.DENT, 2.0));
+
+        Outcome out = SettlementRules.countDiff(now, before, 300_000);
+
+        assertThat(out.lines()).extracting(Line::defectId).containsExactly("small");
+        assertThat(out.total()).isEqualTo(30_000);
+    }
 }

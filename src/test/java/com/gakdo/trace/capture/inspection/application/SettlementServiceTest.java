@@ -76,7 +76,8 @@ class SettlementServiceTest {
         graded(ret, Grade.C, 2);
         GradeResult prev = new GradeResult(before.getCheckpointId());
         prev.recordGrade(before, Grade.B, "grade-rules-v1", List.of(), List.of());
-        when(grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(anyString(), anyString()))
+        when(grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBeforeOrderByCreatedAtDesc(anyString(),
+                anyString(), any()))
                 .thenReturn(Optional.of(prev));
 
         SettlementView view = service.get(ADMIN, ret.getCheckpointId());
@@ -96,7 +97,8 @@ class SettlementServiceTest {
         graded(ret, Grade.B, 2);
         GradeResult prev = new GradeResult(rcv.getCheckpointId());
         prev.recordGrade(rcv, Grade.B, "grade-rules-v1", List.of(), List.of());
-        when(grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(anyString(), anyString()))
+        when(grades.findFirstByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBeforeOrderByCreatedAtDesc(anyString(),
+                anyString(), any()))
                 .thenReturn(Optional.of(prev));
         // 출고는 전체 검사였다(예전 코드는 이것만 보고 위치 비교를 썼다)
         CaptureSet out = completedSet("check-00000000000001", CaptureProfile.FULL);

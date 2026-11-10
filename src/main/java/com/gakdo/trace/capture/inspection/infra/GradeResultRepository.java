@@ -23,6 +23,13 @@ public interface GradeResultRepository extends JpaRepository<GradeResult, Long> 
     Optional<GradeResult> findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(String rentalId,
             String checkpointId);
 
+    /**
+     * 정산 기준(11/10): 이 시점의 첫 등급보다 먼저 첫 등급이 난 다른 시점 중 가장 늦은 것. 앞 시점을 나중에 재등급해도(updatedAt이 바뀌어도)
+     * 순서가 흔들리지 않게 첫 등급 시각(createdAt)으로 고른다.
+     */
+    Optional<GradeResult> findFirstByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBeforeOrderByCreatedAtDesc(
+            String rentalId, String checkpointId, OffsetDateTime createdAt);
+
     /** 같은 렌탈에서 이 시점보다 먼저(첫 등급 시각 기준) 등급이 난 다른 시점 수. 시점 종류를 정할 때 쓴다(CheckpointKind.ofPosition). */
     long countByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBefore(String rentalId, String checkpointId,
             OffsetDateTime createdAt);

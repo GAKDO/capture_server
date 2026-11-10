@@ -75,10 +75,11 @@ public class SettlementService {
         defects.findBySet(gradedSet).forEach(d -> byId.put(d.getPublicId(), d));
         List<DefectGroups.Group> groups = grading.gradedGroups(gradedSet);
 
-        // 기준은 바로 앞 시점(보통 수령). 앞 시점도 전체 검사일 때만 위치 비교(NEW)를 쓴다. 출고가 전체·수령이 빠른 검사면
+        // 기준은 바로 앞 시점(보통 수령). 첫 등급 시각 순서로 고르므로 출고를 나중에 재등급해도 수령이 기준으로 남는다. 앞 시점도 전체 검사일 때만 위치 비교(NEW)를 쓴다. 출고가 전체·수령이 빠른 검사면
         // 위치 비교는 출고와 견주게 되어 배송 중 손상까지 NEW가 되므로, 그때는 수령과 면·종류별 수로 견준다.
         Optional<CaptureSet> previousSet = grades
-                .findFirstByCaptureSetRentalIdAndCheckpointIdNotOrderByUpdatedAtDesc(set.getRentalId(), checkpointId)
+                .findFirstByCaptureSetRentalIdAndCheckpointIdNotAndCreatedAtBeforeOrderByCreatedAtDesc(set.getRentalId(),
+                        checkpointId, result.getCreatedAt())
                 .map(GradeResult::getCaptureSet);
         boolean compared = !gradedSet.isQuick() && previousSet.map(p -> !p.isQuick()).orElse(false);
         SettlementRules.Outcome outcome;
