@@ -328,6 +328,34 @@ public class GradingService {
         return quickGrouping(all, judgeable).groups();
     }
 
+    /**
+     * 정산(11/10): 등급을 매길 때와 같은 묶음을 다시 만든다(기각 제외). 전체 검사는 저장된 비교 결과로 묶음의 isNew를 채우고,
+     * 빠른 검사는 비교가 없어 isNew가 null이다.
+     */
+    @Transactional(readOnly = true)
+    public List<DefectGroups.Group> gradedGroups(CaptureSet set) {
+        List<Defect> all = notDismissed(defects.findBySet(set));
+        if (set.isQuick()) {
+            Set<Face> uploaded = EnumSet.noneOf(Face.class);
+            set.getPhotos().stream().filter(Photo::isUploaded).forEach(p -> uploaded.add(p.getFace()));
+            uploaded.removeAll(set.getSkippedFaces().keySet());
+            return quickGroups(all, uploaded);
+        }
+        Set<Long> aligned = new HashSet<>();
+        alignments.findBySet(set).forEach(a -> aligned.add(a.getPhoto().getId()));
+        List<PhotoState> states = states(set, aligned);
+        Set<Face> judgeable = Judgeability.judgeable(states, Judgeability.unjudgeable(states, set.getSkippedFaces()));
+        List<Defect> current = usable(all, judgeable);
+        Map<String, MatchStatus> status = new HashMap<>();
+        matches.findBySet(set).forEach(m -> status.put(m.getDefect().getPublicId(), m.getStatus()));
+        Map<String, Defect> byId = new HashMap<>();
+        current.forEach(d -> byId.put(d.getPublicId(), d));
+        List<DefectGroups.Placed> placed = DefectGroups.group(current.stream()
+                .map(d -> new DefectGroups.Item(observe(d), d.getLengthMm(), status.get(d.getPublicId())))
+                .toList(), RULE).stream().map(g -> placeStandard(g, byId)).toList();
+        return DefectGroups.mergeAcrossCameras(placed, FULL_CAMERA_MERGE_MM, RULE);
+    }
+
     /** 묶인 흠집과, 그중 두 카메라에 함께 잡혀 하나로 합친 수(근거 문장용). */
     record QuickGrouping(List<DefectGroups.Group> groups, int mergedAcrossCameras) {
     }
