@@ -85,24 +85,7 @@ public final class DefectGroups {
      */
     public static List<Group> mergeAcrossCameras(List<Placed> placed, double maxMm, MatchRule rule) {
         int n = placed.size();
-        record Pair(int i, int j, double d) {
-        }
-        List<Pair> pairs = new ArrayList<>();
-        for (int i = 0; i < n; i++) {
-            for (int j = i + 1; j < n; j++) {
-                Placed a = placed.get(i);
-                Placed b = placed.get(j);
-                if (a.at() == null || b.at() == null || a.group().face() != b.group().face()
-                        || !rule.compatible(a.group().defectClass(), b.group().defectClass())) {
-                    continue;
-                }
-                double d = Shapes.distance(a.at(), b.at());
-                if (d <= maxMm) {
-                    pairs.add(new Pair(i, j, d));
-                }
-            }
-        }
-        pairs.sort(Comparator.comparingDouble(Pair::d));
+        List<Pair> pairs = closePairs(placed, maxMm, rule);
         int[] parent = new int[n];
         List<Set<Camera>> cams = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
@@ -126,6 +109,33 @@ public final class DefectGroups {
             byRoot.computeIfAbsent(find(parent, i), k -> new ArrayList<>()).add(placed.get(i).group());
         }
         return byRoot.values().stream().map(DefectGroups::combine).toList();
+    }
+
+    private record Pair(int i, int j, double d) {
+    }
+
+    /** 합칠 수 있는 두 흠집 쌍을 가까운 순서로. 같은 면·짝지을 수 있는 종류이고 자리가 maxMm 안인 것만. */
+    private static List<Pair> closePairs(List<Placed> placed, double maxMm, MatchRule rule) {
+        List<Pair> pairs = new ArrayList<>();
+        for (int i = 0; i < placed.size(); i++) {
+            for (int j = i + 1; j < placed.size(); j++) {
+                Placed a = placed.get(i);
+                Placed b = placed.get(j);
+                if (pairable(a, b, rule)) {
+                    double d = Shapes.distance(a.at(), b.at());
+                    if (d <= maxMm) {
+                        pairs.add(new Pair(i, j, d));
+                    }
+                }
+            }
+        }
+        pairs.sort(Comparator.comparingDouble(Pair::d));
+        return pairs;
+    }
+
+    private static boolean pairable(Placed a, Placed b, MatchRule rule) {
+        return a.at() != null && b.at() != null && a.group().face() == b.group().face()
+                && rule.compatible(a.group().defectClass(), b.group().defectClass());
     }
 
     /** 이미 묶인 흠집 여러 개를 하나로(merge와 같은 규칙: 가장 심한 종류, 가장 긴 길이, EXISTING이 하나라도 있으면 신규 아님). */

@@ -270,7 +270,8 @@ class ReviewGradingTest {
         d.review(ReviewStatus.PENDING, null, ADMIN_ID, Times.now());
         assertThat(d.getReviewedBy()).isNull();
         assertThat(d.getDismissReason()).isNull();
-        assertThatThrownBy(() -> d.review(ReviewStatus.CONFIRMED, DismissReason.PART, ADMIN_ID, Times.now()))
+        OffsetDateTime at = Times.now();
+        assertThatThrownBy(() -> d.review(ReviewStatus.CONFIRMED, DismissReason.PART, ADMIN_ID, at))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

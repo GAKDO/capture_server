@@ -235,11 +235,12 @@ public class InspectionQueryService {
             }
         }
         OffsetDateTime completedAt = set.getReviewCompletedAt();
-        boolean gradedThisSet = grade.map(g -> g.getCaptureSet() != null
-                && java.util.Objects.equals(set.getId(), g.getCaptureSet().getId()))
-                .orElse(false);
-        if (completedAt == null && gradedThisSet) {
-            completedAt = grade.get().getUpdatedAt();
+        if (completedAt == null) {
+            // 검수 완료 기록이 없으면 이 세트로 난 등급의 시각을 완료 시각으로 본다
+            completedAt = grade.filter(g -> g.getCaptureSet() != null
+                    && java.util.Objects.equals(set.getId(), g.getCaptureSet().getId()))
+                    .map(GradeResult::getUpdatedAt)
+                    .orElse(null);
         }
         int added = (int) all.stream().filter(Defect::isHuman).count();
         return new ReviewSummary(pending, confirmed, dismissed, completedAt, added, open);

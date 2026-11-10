@@ -92,7 +92,8 @@ class CatalogQueryTest {
         when(grades.findByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(grade));
 
         assertThat(service.summaries(List.of(set.getCheckpointId()))).isEmpty();
-        assertThatThrownBy(() -> service.detail(set.getCheckpointId())).isInstanceOf(DomainException.class);
+        String checkpointId = set.getCheckpointId();
+        assertThatThrownBy(() -> service.detail(checkpointId)).isInstanceOf(DomainException.class);
     }
 
     @Test

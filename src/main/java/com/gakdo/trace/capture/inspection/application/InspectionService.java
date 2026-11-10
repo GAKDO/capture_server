@@ -123,18 +123,21 @@ public class InspectionService {
         }
         OffsetDateTime now = Times.now();
         for (InspectEvent.FailedPhoto f : failed) {
-            if (f == null || f.photoId() == null) {
-                continue;
+            if (f != null && f.photoId() != null) {
+                recordFailure(set, f, photos.get(f.photoId()), homographies.containsKey(f.photoId()), now);
             }
-            Photo photo = photos.get(f.photoId());
-            if (photo == null || homographies.containsKey(f.photoId())) {
-                log.warn("정합 실패 항목을 무시합니다 set={} photoId={}", set.getPublicId(), f.photoId());
-                continue;
-            }
-            photo.markAlignFailed(f.reason(), now);
-            log.warn("정합 실패 set={} 사진={}-{}-{} 사유={}", set.getPublicId(), photo.getFace(), photo.getLight(),
-                    photo.getCamera(), photo.getAlignFailure());
         }
+    }
+
+    private static void recordFailure(CaptureSet set, InspectEvent.FailedPhoto f, Photo photo, boolean aligned,
+            OffsetDateTime now) {
+        if (photo == null || aligned) {
+            log.warn("정합 실패 항목을 무시합니다 set={} photoId={}", set.getPublicId(), f.photoId());
+            return;
+        }
+        photo.markAlignFailed(f.reason(), now);
+        log.warn("정합 실패 set={} 사진={}-{}-{} 사유={}", set.getPublicId(), photo.getFace(), photo.getLight(),
+                photo.getCamera(), photo.getAlignFailure());
     }
 
     private Defect workerDefect(WorkerDefect d, Map<String, Photo> photos, Map<String, Homography> homographies,

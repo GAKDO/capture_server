@@ -46,6 +46,8 @@ import com.gakdo.trace.capture.inspection.infra.ReviewQueueRepository.QueueRow;
 @Service
 public class ReviewService {
 
+    private static final String REVIEW_CLOSED_MESSAGE = "검수를 완료했거나 이미 등급이 난 시점입니다.";
+
     private static final Logger log = LoggerFactory.getLogger(ReviewService.class);
 
     private final CaptureSetRepository sets;
@@ -93,7 +95,7 @@ public class ReviewService {
         validate(items);
         CaptureSet set = lockLatest(checkpointId);
         if (set.getReviewCompletedAt() != null || set.getStatus() == SetStatus.GRADED) {
-            throw new DomainException(ErrorCode.REVIEW_CLOSED, "검수를 완료했거나 이미 등급이 난 시점입니다.");
+            throw new DomainException(ErrorCode.REVIEW_CLOSED, REVIEW_CLOSED_MESSAGE);
         }
         Map<String, Defect> byId = new HashMap<>();
         GradingService.reviewCandidates(set, defects.findBySet(set)).forEach(d -> byId.put(d.getPublicId(), d));
@@ -184,7 +186,7 @@ public class ReviewService {
         CaptureSet set = lockLatest(checkpointId);
         // 닫힌 검수는 흠집이 있든 없든 409로 먼저 알린다(계약 REVIEW_CLOSED)
         if (set.getReviewCompletedAt() != null || set.getStatus() == SetStatus.GRADED) {
-            throw new DomainException(ErrorCode.REVIEW_CLOSED, "검수를 완료했거나 이미 등급이 난 시점입니다.");
+            throw new DomainException(ErrorCode.REVIEW_CLOSED, REVIEW_CLOSED_MESSAGE);
         }
         List<Defect> all = defects.findBySet(set);
         Defect target = all.stream().filter(d -> d.isHuman() && d.getPublicId().equals(defectId)).findFirst()
@@ -218,7 +220,7 @@ public class ReviewService {
     private void requireOpen(CaptureSet set, List<Defect> all) {
         if (set.getReviewCompletedAt() != null || set.getStatus() == SetStatus.GRADED
                 || set.getQuality() == Quality.UNJUDGEABLE || !grading.isReviewRequired()) {
-            throw new DomainException(ErrorCode.REVIEW_CLOSED, "검수를 완료했거나 이미 등급이 난 시점입니다.");
+            throw new DomainException(ErrorCode.REVIEW_CLOSED, REVIEW_CLOSED_MESSAGE);
         }
         if (!ready(set)) {
             throw new DomainException(ErrorCode.REVIEW_NOT_READY, "아직 촬영 완료·탐지·정합 결과가 다 오지 않았습니다.");
@@ -265,18 +267,23 @@ public class ReviewService {
     }
 
     /** 요청 안 규칙: 같은 defectId 두 번 금지, DISMISSED에는 reason 필수, 다른 결정에는 reason 금지. 어기면 400(어느 항목인지). */
+    /** 요청 본문 items[i].field 위치(검증 오류에 쓴다) */
+    private static String itemField(int i, String field) {
+        return "items[" + i + "]." + field;
+    }
+
     static void validate(List<Decision> items) {
         List<FieldError> errors = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (int i = 0; i < items.size(); i++) {
             Decision d = items.get(i);
             if (!seen.add(d.defectId())) {
-                errors.add(new FieldError("items[" + i + "].defectId", "같은 흠집을 두 번 보냈습니다."));
+                errors.add(new FieldError(itemField(i, "defectId"), "같은 흠집을 두 번 보냈습니다."));
             }
             if (d.decision() == ReviewStatus.DISMISSED && d.reason() == null) {
-                errors.add(new FieldError("items[" + i + "].reason", "흠집 아님(DISMISSED)에는 사유가 필요합니다."));
+                errors.add(new FieldError(itemField(i, "reason"), "흠집 아님(DISMISSED)에는 사유가 필요합니다."));
             } else if (d.decision() != ReviewStatus.DISMISSED && d.reason() != null) {
-                errors.add(new FieldError("items[" + i + "].reason", "사유는 흠집 아님(DISMISSED)에만 줍니다."));
+                errors.add(new FieldError(itemField(i, "reason"), "사유는 흠집 아님(DISMISSED)에만 줍니다."));
             }
         }
         if (!errors.isEmpty()) {
