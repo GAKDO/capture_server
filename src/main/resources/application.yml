@@ -9,9 +9,77 @@ spring:
   threads:
     virtual:
       enabled: true
+  # PostgreSQL: DB trace, 이 서버는 capture·inspection 스키마만 쓴다 (infra.env POSTGRES_*, trace-secrets DB_*)
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:trace}
+    username: ${DB_USERNAME:trace}
+    password: ${DB_PASSWORD:}
+  flyway:
+    schemas: capture,inspection
+    default-schema: capture
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # 스키마는 Flyway만 바꾼다
+    properties:
+      hibernate:
+        default_schema: capture
+        jdbc:
+          time_zone: UTC
+  # 계약의 additionalProperties: false — 모르는 필드는 400
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  # RabbitMQ: topic exchange trace.events (infra.env RABBITMQ_*, trace-secrets RABBITMQ_USERNAME·PASSWORD)
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    # trace.inspect.completed 소비(CA2): 일시 오류는 3번 시도, 그래도 실패하면 다시 넣지 않고 trace.dlx로
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+  # auth-server가 발급한 RS256 JWT를 JWKS로 검증한다
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${AUTH_JWKS_URI:${AUTH_SERVER_URL:http://auth-server:8080}/.well-known/jwks.json}
 
 app:
   commit: ${APP_COMMIT:unknown}   # 이미지에 구운 커밋 SHA. /ping 응답에 실려 배포 확인에 쓴다
+  version: '@project.version@'
+  settlement:
+    base-price: ${TRACE_SETTLEMENT_BASE_PRICE:2057693}   # 반납 정산 기준가(원, 자산 대장 취득가). 금액은 이 값의 비율
+  jwt:
+    issuer: trace
+  # MinIO(S3 API). 사진은 서버를 거치지 않고 사전 서명 URL로 직접 올라간다 (infra.env MINIO_ENDPOINT, trace-secrets MINIO_*)
+  storage:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:}
+    secret-key: ${MINIO_SECRET_KEY:}
+    region: ${MINIO_REGION:us-east-1}
+    capture-bucket: ${MINIO_CAPTURE_BUCKET:trace-captures}
+    upload-ttl: 10m
+    # 사전 서명 URL의 앞부분(scheme://host[:port])을 이 주소로 바꿔 준다. HTTPS 웹에서 http:// MinIO 주소는 혼합 콘텐츠로 막히므로
+    # web nginx가 /trace-captures/를 MinIO로 넘기고(Host는 MinIO 주소 그대로) 여기에는 web 공개 주소를 둔다. 비우면 바꾸지 않는다
+    public-base: ${MINIO_PUBLIC_BASE:}
+    derived-bucket: ${MINIO_DERIVED_BUCKET:trace-derived}   # 펼친 이미지·텍스처(inspect-worker가 올림, CA2 /media)
+    view-ttl: 10m
+  # 성능 그래프의 모델별 mAP(contracts #30). 학습이 끝나면 검증 점수를 "모델버전=mAP50/mAP50-95"로, 여럿이면 쉼표로 넣는다
+  # 예: yolo11s-seg-v001-trt-fp16=0.71/0.48. 모르는 값은 - (null). 비우면 빈 목록
+  benchmark:
+    model-metrics: ${MODEL_METRICS:}
+  # 사람 검수(11/8): AI 후보가 있는 세트는 관리자가 검수를 완료한 뒤 등급을 매긴다. false면 검수 없이 바로 등급(이전 동작)
+  review:
+    required: ${REVIEW_REQUIRED:true}
+    # AI 후보가 없는 세트도 검수를 기다린다(11/9): 관리자가 놓친 흠집을 더하거나 그대로 완료하면 등급. false면 후보 없을 때 바로 등급
+    hold-empty: ${REVIEW_HOLD_EMPTY:true}
 
 management:
   endpoints:
