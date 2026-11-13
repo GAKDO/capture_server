@@ -26,7 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +44,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gakdo.trace.capture.captureset.api.CaptureSetController;
+import com.gakdo.trace.capture.captureset.api.RentalProfileController;
 import com.gakdo.trace.capture.captureset.application.CaptureEventPublisher;
 import com.gakdo.trace.capture.captureset.application.CaptureSetService;
 import com.gakdo.trace.capture.captureset.application.CaptureUploadedEvent;
@@ -57,7 +57,7 @@ import com.gakdo.trace.capture.support.WebTestBase;
 /**
  * 컨트롤러 + 실제 서비스 + 메모리 저장소. DB·MinIO·RabbitMQ 없이 수용 시나리오를 확인한다(실제 연결은 CaptureIntegrationTest).
  */
-@WebMvcTest(controllers = CaptureSetController.class)
+@WebMvcTest(controllers = {CaptureSetController.class, RentalProfileController.class})
 @Import({CaptureSetService.class, FakePhotoStorage.class})
 class CaptureSetApiTest extends WebTestBase {
 
@@ -81,7 +81,7 @@ class CaptureSetApiTest extends WebTestBase {
     @MockitoBean
     private CaptureEventPublisher events;
 
-    private final Map<String, CaptureSet> saved = new ConcurrentHashMap<>();
+    private final Map<String, CaptureSet> saved = java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>());
 
     @BeforeEach
     void memoryRepository() {
@@ -98,6 +98,89 @@ class CaptureSetApiTest extends WebTestBase {
         when(repository.existsByCheckpointIdAndRentalIdNot(anyString(), anyString())).thenAnswer(inv -> saved.values()
                 .stream().anyMatch(s -> s.getCheckpointId().equals(inv.getArgument(0))
                         && !s.getRentalId().equals(inv.getArgument(1))));
+        // 만든 순서(LinkedHashMap) = id 순서
+        when(repository.findByRentalIdOrderByIdAsc(anyString())).thenAnswer(inv -> {
+            synchronized (saved) {
+                return saved.values().stream().filter(s -> s.getRentalId().equals(inv.getArgument(0))).toList();
+            }
+        });
+    }
+
+    // ── 검사 방식 고정(11/13) ──
+
+    @Test
+    @DisplayName("출고를 전체 검사로 완료한 렌탈은 수령을 빠른 검사로 만들면 400(profile), 전체 검사는 201")
+    void receiptMustFollowCheckoutFull() throws Exception {
+        completedBooth(boothBody(List.of()));
+        perform(post("/api/v1/captures/sets").with(booth()), quickBody(OTHER_CHECKPOINT))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("profile"))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("전체 검사")));
+        created(booth(), boothBody(List.of()).replace(CHECKPOINT, OTHER_CHECKPOINT));
+    }
+
+    @Test
+    @DisplayName("출고를 빠른 검사로 완료한 렌탈은 수령을 전체 검사·폰으로 만들면 400, 빠른 검사는 201")
+    void receiptMustFollowCheckoutQuick() throws Exception {
+        completedBooth(quickBody(CHECKPOINT));
+        perform(post("/api/v1/captures/sets").with(booth()), boothBody(List.of()).replace(CHECKPOINT, OTHER_CHECKPOINT))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("profile"));
+        perform(post("/api/v1/captures/sets").with(capture(OTHER_CHECKPOINT, RENTAL)),
+                phoneBody().replace(CHECKPOINT, OTHER_CHECKPOINT))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("profile"));
+        created(booth(), quickBody(OTHER_CHECKPOINT));
+    }
+
+    @Test
+    @DisplayName("완료하지 않은 세트만 있거나 같은 시점을 다시 찍을 때는 방식을 바꿀 수 있다")
+    void noReferenceYet() throws Exception {
+        created(booth(), boothBody(List.of())); // 완료 전: 기준 아님
+        created(booth(), quickBody(OTHER_CHECKPOINT));
+        mvc.perform(get("/api/v1/captures/rentals/" + RENTAL + "/profile").with(booth()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rentalId").value(RENTAL))
+                .andExpect(jsonPath("$.profile").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("기준 방식 조회: 지금 찍는 시점은 빼고 출고 세트 방식을 돌려준다, 범위 밖 토큰은 403")
+    void rentalProfileQuery() throws Exception {
+        completedBooth(quickBody(CHECKPOINT));
+        mvc.perform(get("/api/v1/captures/rentals/" + RENTAL + "/profile").param("checkpointId", OTHER_CHECKPOINT)
+                .with(booth()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profile").value("QUICK"))
+                .andExpect(jsonPath("$.checkpointId").value(CHECKPOINT));
+        mvc.perform(get("/api/v1/captures/rentals/" + RENTAL + "/profile").param("checkpointId", CHECKPOINT)
+                .with(admin()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.profile").doesNotExist());
+        mvc.perform(get("/api/v1/captures/rentals/" + RENTAL + "/profile").with(capture(OTHER_CHECKPOINT, RENTAL)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.profile").value("QUICK"));
+        mvc.perform(get("/api/v1/captures/rentals/" + RENTAL + "/profile").with(customer()))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/captures/rentals/" + OTHER_RENTAL + "/profile").with(capture()))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/captures/rentals/" + OTHER_RENTAL + "/profile").with(customer()))
+                .andExpect(status().isForbidden());
+    }
+
+    private void completedBooth(String body) throws Exception {
+        String setId = created(booth(), body).get("captureSetId").asText();
+        uploadAll(setId);
+        complete(setId, booth(), "key-" + setId, null).andExpect(status().isAccepted());
+    }
+
+    private static String quickBody(String checkpointId) {
+        List<String> photos = new ArrayList<>();
+        for (String face : List.of("TOP", "BOT")) {
+            photos.add(photo(face, "L1", "CAM1"));
+            photos.add(photo(face, "L1", "CAM2"));
+        }
+        return setBody(RENTAL, checkpointId, "BOOTH", photos).replace("\"source\"", "\"profile\":\"QUICK\",\"source\"");
     }
 
     // ── 이야기 1: 세트 생성 ──
