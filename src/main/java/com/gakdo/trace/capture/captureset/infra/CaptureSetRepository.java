@@ -26,6 +26,9 @@ public interface CaptureSetRepository extends JpaRepository<CaptureSet, Long> {
     /** 이 시점에 다른 렌탈로 만든 세트가 있는지(시점과 렌탈 짝 확인). */
     boolean existsByCheckpointIdAndRentalIdNot(String checkpointId, String rentalId);
 
+    /** 렌탈의 세트를 만든 순서대로. 검사 방식 고정(ProfileLock, 11/13)에 쓴다. 렌탈당 세트는 몇 개뿐이다. */
+    List<CaptureSet> findByRentalIdOrderByIdAsc(String rentalId);
+
     /** 시점의 가장 최근 세트(검사 결과 조회, CA2). */
     Optional<CaptureSet> findFirstByCheckpointIdOrderByIdDesc(String checkpointId);
 
