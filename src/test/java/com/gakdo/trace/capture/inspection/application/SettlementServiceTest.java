@@ -1,3 +1,7 @@
+// 이 파일이 확인하는 것: 반납 정산서(11/10). 관리자 화면에서 반납 시점의 차감 금액을 보여 준다.
+// 정산은 반납 시점에만 하고, 검수·등급이 끝난 뒤에만 금액을 내며, 앞 시점보다 늘어난 흠집만 매긴다.
+// 기기 기준가는 2,057,693원(발표 예시 기기)으로 둔다.
+
 package com.gakdo.trace.capture.inspection.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +58,7 @@ class SettlementServiceTest {
     private GradeResultRepository grades;
     private SettlementService service;
 
+    // 테스트 도구: 가짜 흠집·등급 저장소로 정산 서비스를 만든다.
     @BeforeEach
     void setUp() {
         defects = mock(DefectRepository.class);
@@ -63,6 +68,8 @@ class SettlementServiceTest {
         service = new SettlementService(mock(CaptureSetRepository.class), grades, defects, grading, 2_057_693L);
     }
 
+    // [상황] 앞 시점(수령)에는 윗면 긁힘 1개, 반납에는 같은 긁힘 + 떨어진 자리 찍힘 1개가 있다. 반납 등급은 C다.
+    // [기대] 정산서는 "준비됨"(READY), 시점은 반납(RET)이고, 새로 늘어난 찍힘 하나만 31,000원으로 매긴다.
     @Test
     @DisplayName("반납 빠른 검사는 앞 시점보다 늘어난 흠집만 규칙표 금액으로 매긴다")
     void returnChargesOnlyIncrease() {
@@ -89,6 +96,11 @@ class SettlementServiceTest {
         assertThat(view.grade()).isEqualTo("C");
     }
 
+    // [상황] 출고는 전체 검사, 수령은 빠른 검사, 반납은 전체 검사로 찍었다.
+    //        반납 전체 검사의 위치 비교는 출고와 견주므로, 배송 중 생긴 찍힘(수령 때 이미 있던 것)을 새 흠집으로 본다.
+    // [기대] 바로 앞 시점(수령)이 빠른 검사이므로 출고와 위치 비교하지 않고 수령과 개수로 견준다.
+    //        수령 때 이미 있던 찍힘은 빼서 차감 0원이고, "앞 시점과 같은 수만큼의 흠집 1개는 빼고 계산"이라고 적는다
+    //        (고객이 배송 중 손상까지 물어내지 않게).
     @Test
     @DisplayName("반납이 전체 검사여도 앞 시점(수령)이 빠른 검사면 출고와 위치 비교하지 않고 수령과 수로 견줘 배송 중 손상을 빼다")
     void fullReturnAfterQuickReceiptComparesWithReceipt() {
@@ -123,6 +135,8 @@ class SettlementServiceTest {
         assertThat(view.notes()).contains("앞 시점과 같은 수만큼의 흠집 1개는 빼고 계산");
     }
 
+    // [상황] 수령 시점의 정산서를 연다.
+    // [기대] 수령 때 흠집은 배송 중 손상이라 정산 대상 아님(NOT_APPLICABLE), 0원이다.
     @Test
     @DisplayName("수령 시점은 배송 중 손상이라 정산하지 않는다")
     void receiptIsNotApplicable() {
@@ -134,6 +148,8 @@ class SettlementServiceTest {
         assertThat(view.total()).isZero();
     }
 
+    // [상황] 반납 세트는 올라왔지만 아직 검수·등급이 나지 않았다.
+    // [기대] "기다리는 중"(PENDING)으로 차감 항목 없이 돌려준다.
     @Test
     @DisplayName("검수·등급 전이면 PENDING으로 금액 없이 돌려준다")
     void pendingBeforeGrade() {
@@ -149,6 +165,7 @@ class SettlementServiceTest {
         assertThat(view.lines()).isEmpty();
     }
 
+    // 테스트 도구: 그 세트에 등급을 기록하고, 같은 렌탈에서 앞서 등급 난 시점 수(earlier, 시점 종류를 정함)를 정해 둔다.
     private void graded(CaptureSet set, Grade grade, long earlier) {
         GradeResult result = new GradeResult(set.getCheckpointId());
         result.recordGrade(set, grade, "grade-rules-v1", List.of(), List.of());
@@ -157,10 +174,12 @@ class SettlementServiceTest {
                 eq(set.getCheckpointId()), any())).thenReturn(earlier);
     }
 
+    // 테스트 도구: 다 올린 부스 빠른 검사 세트를 만든다.
     private static CaptureSet completedQuickSet(String checkpointId) {
         return completedSet(checkpointId, CaptureProfile.QUICK);
     }
 
+    // 테스트 도구: 다 올린 부스 세트를 검사 방식을 정해 만든다.
     private static CaptureSet completedSet(String checkpointId, CaptureProfile profile) {
         CaptureSet set = CaptureSet.open("rental-000000000000001", checkpointId, CaptureSource.BOOTH,
                 "booth-1", null, profile, specs());
@@ -170,16 +189,19 @@ class SettlementServiceTest {
         return set;
     }
 
+    // 테스트 도구: 세트에서 그 면·카메라의 L1 사진을 찾는다.
     private static Photo photo(CaptureSet set, Face face, Camera camera) {
         return photo(set, face, camera, Light.L1);
     }
 
+    // 테스트 도구: 세트에서 그 면·카메라·조명의 사진을 찾는다.
     private static Photo photo(CaptureSet set, Face face, Camera camera, Light light) {
         return set.getPhotos().stream()
                 .filter(p -> p.getFace() == face && p.getCamera() == camera && p.getLight() == light).findFirst()
                 .orElseThrow();
     }
 
+    // 테스트 도구: 빠른 검사 12장 목록(BOT·TOP × L1~L3 × CAM1·CAM2)을 만든다.
     private static List<PhotoSpec> specs() {
         List<PhotoSpec> specs = new ArrayList<>();
         OffsetDateTime at = OffsetDateTime.parse("2026-11-05T10:00:00+09:00");

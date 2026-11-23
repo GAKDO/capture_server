@@ -1,3 +1,5 @@
+// 이 파일이 확인하는 것: 공개 흠집 요약 API(/api/v1/captures/catalog). 로그인 없이 시점별 흠집 개수·종류·등급을 보여 준다.
+
 package com.gakdo.trace.capture.inspection;
 
 import static org.mockito.ArgumentMatchers.anyList;
@@ -31,6 +33,8 @@ class CatalogApiTest extends WebTestBase {
     @MockitoBean
     private CatalogQueryService service;
 
+    // [상황] 로그인 없이 시점 ID 두 개를 쉼표로 이어 요약을 요청하고, 다음엔 형식이 틀린 ID("bad")로 요청한다.
+    // [기대] 첫 요청은 200과 흠집 개수(2)·종류별 개수(찌그러짐 1 등)를 돌려주고, 틀린 ID는 400으로 거절한다.
     @Test
     @DisplayName("공개 흠집 요약은 로그인 없이 쉼표로 이은 시점 ID를 받고, 형식이 틀린 ID는 400")
     void publicSummaries() throws Exception {

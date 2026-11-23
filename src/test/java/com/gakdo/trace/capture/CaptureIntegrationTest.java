@@ -1,3 +1,7 @@
+// 이 파일이 확인하는 것: 촬영 업로드 전체 흐름을 실제 PostgreSQL·RabbitMQ·S3 호환 저장소로 끝까지 돌려 보는 통합 시험.
+// 세트 만들기 → 사전 서명 URL로 사진 직접 올리기 → 끊기면 남은 사진 URL만 다시 받기 → 완료 → "업로드 완료" 이벤트 → 해시 확인.
+// Docker가 필요해서 Claude 세션에서는 건너뛰고 GitHub Actions에서 돈다.
+
 package com.gakdo.trace.capture;
 
 import static com.gakdo.trace.capture.support.TestJwts.CHECKPOINT;
@@ -82,6 +86,7 @@ class CaptureIntegrationTest {
             .waitingFor(Wait.forHttp("/").forStatusCode(200));
     private static final boolean VERIFIES_CHECKSUM = "true".equals(System.getenv("S3_TEST_VERIFIES_CHECKSUM"));
 
+    // 테스트 도구: S3 호환 저장소 주소와 버킷을 서버 설정에 넣는다(S3_TEST_ENDPOINT가 있으면 그 주소, 없으면 moto 컨테이너).
     @DynamicPropertySource
     static void storage(DynamicPropertyRegistry registry) {
         if (EXTERNAL_S3 == null) {
@@ -114,6 +119,11 @@ class CaptureIntegrationTest {
 
     private final HttpClient http = HttpClient.newHttpClient();
 
+    // [상황] 폰으로 7면 사진을 찍은 고객이 세트를 만들고, 사진 3장만 올린 뒤 연결이 끊겼다가 나머지 URL을 다시 받아 올리고 완료한다.
+    // [기대] 다시 받은 URL은 남은 4장 것만 온다. 완료하면 "올림 완료"(UPLOADED)가 되고 업로드 완료 이벤트가 나간다
+    //        (메시지 ID = 이벤트 ID, 렌탈·세트 ID, 탐지 필요 표시, 사진 7장).
+    //        저장소에서 내려받은 파일의 SHA-256 = DB에 저장된 해시 = 이벤트의 해시다(증거 사진이 바뀌지 않았음).
+    //        체크섬을 검사하는 실제 MinIO에서는 알린 해시와 다른 파일 업로드가 거절되는 것도 확인한다.
     @Test
     @DisplayName("사진은 사전 서명 URL로 직접 올라가고, 끊기면 남은 사진의 URL만 다시 받으며, 완료하면 이벤트가 나가며, 내려받은 파일 해시와 저장된 해시가 같다")
     void endToEnd() throws Exception {
@@ -188,6 +198,8 @@ class CaptureIntegrationTest {
         }
     }
 
+    // [상황] 체크섬 없이 올린 사진과 없는 사진의 해시를 묻는다.
+    // [기대] 체크섬이 없으면 내려받아 SHA-256을 직접 계산하고, 없는 사진은 빈 값이다.
     @Test
     @DisplayName("체크섬 없이 올린 객체는 내려받아 SHA-256을 계산하고, 없는 객체는 빈 값")
     void hashFallback() throws Exception {
@@ -201,6 +213,7 @@ class CaptureIntegrationTest {
         assertThat(storage.exists("captures/plain/TOP-ROOM-PHONE.jpg")).isTrue();
     }
 
+    // 테스트 도구: 사전 서명 URL로 사진을 PUT하고(서버가 준 헤더 포함) 응답 상태 코드를 돌려준다.
     private int put(JsonNode upload, byte[] bytes) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(upload.get("url").asText()))
                 .PUT(HttpRequest.BodyPublishers.ofByteArray(bytes));
@@ -208,6 +221,7 @@ class CaptureIntegrationTest {
         return http.send(request.build(), HttpResponse.BodyHandlers.discarding()).statusCode();
     }
 
+    // 테스트 도구: 바이트의 SHA-256 16진 문자열을 구한다.
     private static String sha256(byte[] bytes) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
     }

@@ -1,3 +1,8 @@
+// 이 파일이 확인하는 것: 사람 검수(11/8)를 처음부터 끝까지 실제 PostgreSQL·RabbitMQ로 돌려 보는 통합 시험.
+// 흐름: 부스 빠른 검사 → AI가 흠집 후보를 넓게 표시 → 등급 보류 → 관리자 검수 대기 목록 → 흠집 맞음(확정)/아님(기각)
+// → 검수 완료 → 기각을 뺀 흠집으로 등급 → "시점 등급 완료" 이벤트에 검수 기록(review)이 실린다.
+// Docker가 필요해서 Claude 세션에서는 건너뛰고 GitHub Actions에서 돈다.
+
 package com.gakdo.trace.capture.inspection;
 
 import static com.gakdo.trace.capture.support.TestJwts.admin;
@@ -61,6 +66,7 @@ class ReviewFlowIntegrationTest {
     @ServiceConnection
     static final RabbitMQContainer RABBIT = new RabbitMQContainer("rabbitmq:3.13-management-alpine");
 
+    // 테스트 도구: MinIO 대신 메모리 사진 저장소를 쓰게 바꿔 끼운다.
     @TestConfiguration
     static class Storage {
         @Bean
@@ -85,6 +91,14 @@ class ReviewFlowIntegrationTest {
     @Autowired
     private RabbitAdmin rabbitAdmin;
 
+    // [상황] 부스 빠른 검사 세트를 올리고, 탐지 결과로 윗면 긁힘·바닥 찍힘 후보 2개가 온다(확신도 0.31로 낮음).
+    //        관리자가 긁힘은 확정, 찍힘은 "테이프"(TAPE)로 기각한 뒤 검수를 완료한다.
+    // [기대] - 검수 전: 등급이 없고 후보 2개가 검수 대기(PENDING)이며 대기 목록에 2건으로 나온다. 등급 이벤트는 나가지 않는다.
+    //        - 대기가 남은 채 완료하면 409 REVIEW_PENDING_REMAINS(남은 2건). 사유 없는 기각은 400, 고객이 검수하려 하면 403.
+    //        - 확정·기각을 저장해도 아직 등급은 없다(대기 0, 기각 1).
+    //        - 검수 완료하면 기각한 찍힘을 빼고 긁힘 하나로 등급 B가 난다. 같은 키로 다시 보내면 200, 다른 키는 409 REVIEW_CLOSED.
+    //        - 등급 이벤트(스키마 1.3)에 등급 B와 검수한 관리자·기각 1건이 실린다.
+    //        - 고객에게는 기각한 찍힘이 보이지 않고 긁힘 하나만 보인다. 검수 완료 목록에도 나온다.
     @Test
     @DisplayName("AI 후보가 있는 빠른 검사는 검수 완료 뒤에만 등급이 나고, 기각한 찍힘은 빠져 긁힘 하나로 B, 이벤트에 검수 기록이 실린다")
     void reviewThenGrade() throws Exception {
@@ -175,12 +189,14 @@ class ReviewFlowIntegrationTest {
                 .andExpect(jsonPath("$.items[?(@.checkpointId == '" + CP + "')].dismissed").value(1));
     }
 
+    // 테스트 도구: 주어진 토큰(관리자·고객)으로 그 시점의 검사 결과를 읽는다.
     private JsonNode inspection(org.springframework.test.web.servlet.request.RequestPostProcessor token)
             throws Exception {
         return json.readTree(mvc.perform(get("/api/v1/captures/checkpoints/" + CP + "/inspection").with(token))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
     }
 
+    // 테스트 도구: 검사 결과에서 그 종류(긁힘·찍힘) 흠집의 ID를 찾는다.
     private static String idOf(JsonNode view, String cls) {
         for (JsonNode d : view.get("photoDefects")) {
             if (cls.equals(d.get("class").asText())) {
@@ -190,12 +206,14 @@ class ReviewFlowIntegrationTest {
         throw new AssertionError("흠집이 없습니다: " + cls);
     }
 
+    // 테스트 도구: 이 렌탈을 가진 일반 고객 토큰.
     private static org.springframework.test.web.servlet.request.RequestPostProcessor customer() {
         return jwt().jwt(j -> j.subject("cust00000000000000009").claim("role", "CUSTOMER")
                 .claim("rentals", List.of(RENTAL)))
                 .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
     }
 
+    // 테스트 도구: 부스 토큰으로 빠른 검사 세트(TOP·BOT × CAM1·CAM2)를 만들고, 사진을 올린 것처럼 해 둔 뒤 완료한다.
     private String quickSet() throws Exception {
         List<String> photos = new ArrayList<>();
         for (String face : List.of("TOP", "BOT")) {
@@ -220,6 +238,7 @@ class ReviewFlowIntegrationTest {
         return setId;
     }
 
+    // 테스트 도구: 4장 모두 분석했다는 "분석한 사진" 목록을 만든다.
     private static List<String> analyzed() {
         List<String> out = new ArrayList<>();
         for (String face : List.of("TOP", "BOT")) {
@@ -230,6 +249,7 @@ class ReviewFlowIntegrationTest {
         return out;
     }
 
+    // 테스트 도구: 그 면 CAM1 사진의 탐지 하나(종류, x 위치의 가로 40px 상자, 확신도 0.31)를 JSON으로 만든다.
     private static String detection(String face, String cls, double x) {
         return "{\"face\":\"" + face + "\",\"light\":\"L1\",\"camera\":\"CAM1\",\"class\":\"" + cls
                 + "\",\"polygon\":[[" + x + "," + x + "],[" + (x + 40) + "," + x + "],[" + (x + 40) + "," + (x + 8)

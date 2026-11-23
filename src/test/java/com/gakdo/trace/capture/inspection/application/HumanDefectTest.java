@@ -1,3 +1,6 @@
+// 이 파일이 확인하는 것: 놓친 흠집 직접 추가(11/9). AI가 놓친 흠집을 관리자가 사진 위에 그려 더하면 등급에 들어간다.
+// 또 AI 후보가 하나도 없는 세트도 바로 등급을 내지 않고 관리자 검수를 기다린다(사람이 한 번은 보게).
+
 package com.gakdo.trace.capture.inspection.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,6 +67,7 @@ class HumanDefectTest {
     private ReviewService reviews;
     private final List<Defect> stored = new ArrayList<>();
 
+    // 테스트 도구: 메모리 목록(stored)을 흠집 저장소처럼 쓰고, 검수 켬·후보 없는 세트도 기다림 설정으로 등급·검수 서비스를 만든다.
     @BeforeEach
     void setUp() {
         defects = mock(DefectRepository.class);
@@ -85,6 +89,8 @@ class HumanDefectTest {
                 mock(InspectionQueryService.class), mock(FaceAlignmentRepository.class));
     }
 
+    // [상황] AI 후보가 없는 빠른 검사 세트에 탐지 결과가 왔다.
+    // [기대] 바로 등급을 내지 않고(이벤트도 없음) 검수 칸이 열린다. 관리자가 검수를 완료하면 그때 등급 A가 난다.
     @Test
     @DisplayName("AI 후보가 없는 세트도 바로 등급을 매기지 않고 검수를 기다리며, 검수 칸이 열린다")
     void emptySetWaitsForReview() {
@@ -98,6 +104,9 @@ class HumanDefectTest {
         assertThat(sent().grade()).isEqualTo(Grade.A);
     }
 
+    // [상황] AI가 놓친 윗면 찍힘을 관리자가 그려 더하고 검수를 완료한다.
+    // [기대] 사람이 그린 것(HUMAN)·확정·그린 관리자·확신도 1.0으로 저장되고, AI 후보 수에는 세지 않는다.
+    //        검수 완료 때 이 찍힘이 등급에 들어가 C가 되고 세트는 등급 완료(GRADED)가 된다.
     @Test
     @DisplayName("AI가 놓친 찍힘을 관리자가 그려 더하면 HUMAN·확정으로 저장되고 검수 완료 때 등급(C)에 들어간다")
     void addedDefectCountsInGrade() {
@@ -119,6 +128,8 @@ class HumanDefectTest {
         assertThat(set.getStatus()).isEqualTo(SetStatus.GRADED);
     }
 
+    // [상황] AI 후보 하나와 관리자가 그린 흠집 하나가 있다. 둘 다 지우려 한다.
+    // [기대] 관리자가 그린 것은 지워지고, AI 후보는 지울 수 없다(404, AI 후보는 기각으로만 처리).
     @Test
     @DisplayName("직접 더한 흠집은 지울 수 있지만 AI 후보는 지울 수 없다(404)")
     void removeOnlyHuman() {
@@ -135,6 +146,9 @@ class HumanDefectTest {
         assertThat(stored).containsExactly(ai);
     }
 
+    // [상황] ① 건너뛴 윗면에 흠집을 그림 ② 빠른 검사 세트에 없는 키보드 사진에 그림 ③ 좌표가 음수인 다각형
+    //        ④ 아직 탐지 결과가 안 온 세트에 그림 ⑤ 이미 등급이 난 세트에 그림.
+    // [기대] ①②③은 400, ④는 409 REVIEW_NOT_READY(검수 칸도 닫혀 있음), ⑤는 409 REVIEW_CLOSED(검수 칸 닫힘)다.
     @Test
     @DisplayName("건너뛴 면·세트에 없는 사진·잘못된 다각형은 400, 탐지 전은 409 REVIEW_NOT_READY, 등급 뒤는 409 REVIEW_CLOSED")
     void rejectsBadAdditions() {
@@ -168,6 +182,8 @@ class HumanDefectTest {
         assertThat(ReviewService.open(graded, stored, true, true)).isFalse();
     }
 
+    // [상황] "후보 없는 세트는 기다리지 않기" 설정으로 서버를 띄운다.
+    // [기대] 예전처럼 후보 없는 세트는 바로 등급이 나고 검수 칸은 닫힌다.
     @Test
     @DisplayName("후보 없는 세트를 기다리지 않는 설정이면 예전처럼 바로 등급이 나고 검수 칸이 닫힌다")
     void holdEmptyOff() {
@@ -178,6 +194,9 @@ class HumanDefectTest {
         assertThat(off.isHoldEmpty()).isFalse();
     }
 
+    // [상황] 검수 대기·완료 목록을 읽는 SQL을 확인한다.
+    // [기대] 후보 없는 세트도 0건으로 목록에 싣고(LEFT JOIN, 없으면 0), 탐지 결과가 오기 전 세트는 뺀다. 개수 제한이 있고 완료 목록은 최근 완료 순이다.
+    //        설정을 끄면 후보 없는 세트를 싣는 부분이 빠진다.
     @Test
     @DisplayName("대기 목록 SQL은 후보 없는 세트도 0건으로 싣되 탐지·정합 전 세트는 뺀다")
     void queueSqlIncludesEmptySets() {
@@ -188,12 +207,14 @@ class HumanDefectTest {
         assertThat(ReviewQueueRepository.doneSql(true)).contains("LEFT JOIN per_set").contains("review_completed_at DESC");
     }
 
+    // 테스트 도구: 그 시점의 최신 세트를 찾고 잠글 수 있게 가짜 세트 저장소에 넣어 둔다.
     private CaptureSet lockable(CaptureSet set) {
         when(sets.findLatestPublicIdByCheckpointId(set.getCheckpointId())).thenReturn(Optional.of(set.getPublicId()));
         when(sets.findForUpdate(set.getPublicId())).thenReturn(Optional.of(set));
         return set;
     }
 
+    // 테스트 도구: 보낸 "시점 등급 완료" 이벤트를 꺼낸다.
     private CheckpointGradedEvent sent() {
         ArgumentCaptor<CheckpointGradedEvent> sent = ArgumentCaptor.forClass(CheckpointGradedEvent.class);
         verify(events).publishGraded(sent.capture());
@@ -202,12 +223,14 @@ class HumanDefectTest {
 
     private static int seq;
 
+    // 테스트 도구: 다 올리고 탐지 결과까지 받은 빠른 검사 세트를 만든다(검수할 수 있는 상태).
     private static CaptureSet readySet(Map<Face, String> skipped) {
         CaptureSet set = completedSet(skipped);
         set.markDetectionsReceived();
         return set;
     }
 
+    // 테스트 도구: 다 올렸지만 탐지 결과는 아직 없는 빠른 검사 세트를 만든다(시점 ID는 매번 새로).
     private static CaptureSet completedSet(Map<Face, String> skipped) {
         seq++;
         CaptureSet set = CaptureSet.open("rental-000000000000001", String.format("check-%015d", seq),
@@ -218,12 +241,14 @@ class HumanDefectTest {
         return set;
     }
 
+    // 테스트 도구: 세트에서 그 면의 CAM1·L1 사진을 찾는다.
     private static Photo photo(CaptureSet set, Face face) {
         return set.getPhotos().stream()
                 .filter(p -> p.getFace() == face && p.getCamera() == Camera.CAM1 && p.getLight() == Light.L1)
                 .findFirst().orElseThrow();
     }
 
+    // 테스트 도구: 빠른 검사 12장 목록(BOT·TOP × L1~L3 × CAM1·CAM2)을 만든다.
     private static List<PhotoSpec> specs() {
         List<PhotoSpec> specs = new ArrayList<>();
         OffsetDateTime at = OffsetDateTime.parse("2026-11-09T10:00:00+09:00");
