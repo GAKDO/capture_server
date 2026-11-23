@@ -93,6 +93,7 @@ class CatalogQueryTest {
 
     // [상황] 폰으로 찍어 등급 A가 난 세트가 있다.
     // [기대] 공개 목록에서 빠지고, 상세를 열면 404다.
+    //        ※ 응답 코드: 404 = 찾을 수 없음(없는 주소나 데이터)
     @Test
     @DisplayName("폰으로 찍은 세트는 공개 목록에서 빠지고 상세는 404")
     void phoneSetIsHidden() {

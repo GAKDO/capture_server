@@ -143,6 +143,7 @@ class InspectionFlowIntegrationTest {
     /** 시험 렌탈 지우기(trace.checkpoint.purged): 세 시점을 지우면 매칭·흠집까지 실제 DB에서 모두 사라지고 /inspection은 404. */
     // [단계] 시험 렌탈 지우기: 세 시점에 "시점 지움" 이벤트(TEST- 시리얼)를 보낸다.
     // [기대] 세 시점의 검사 결과가 모두 404가 되고, DB에도 이 렌탈의 세트가 하나도 남지 않는다(짝·흠집까지 지워짐).
+    //        ※ 응답 코드: 404 = 찾을 수 없음(없는 주소나 데이터)
     private void purgeAll() throws Exception {
         List<String> checkpoints = List.of(CP_OUT, CP_RCV, CP_RET);
         for (String cp : checkpoints) {
@@ -215,6 +216,7 @@ class InspectionFlowIntegrationTest {
     // [단계] 관리자 화면 속도·성능 표를 확인한다.
     // [기대] 출고 세트 한 줄에 부스가 보낸 탐지 시간(28.4초)·부스 전체 시간(91.5초)·모델 버전·사진 16장·완료·등급 시각이 나온다.
     //        부스 토큰은 403, 한 번에 101개 이상 요청하면 400이다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일), 400 = 요청 내용이 형식에 맞지 않음
     private void checkBenchmark(String setId) throws Exception {
         JsonNode items = json.readTree(mvc.perform(get("/api/v1/captures/benchmarks?source=BOOTH&limit=100")
                 .with(admin())).andExpect(status().isOk()).andReturn().getResponse().getContentAsString())
@@ -313,6 +315,8 @@ class InspectionFlowIntegrationTest {
     // [단계] 등급 뒤 재전송·고객 권한·3D 텍스처를 확인한다.
     // [기대] 등급이 난 세트에 탐지를 다시 보내면 409. 본인 렌탈 고객은 검사 결과를 보고, 남의 렌탈 고객은 403.
     //        미디어 조회는 윗면 텍스처 1개를 가공 이미지 버킷(trace-derived) 서명 URL로 주고, 남의 고객은 403, 없는 시점은 404.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등), 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일),
+    //          404 = 찾을 수 없음(없는 주소나 데이터)
     private void checkAccessAndMedia(String retSet, String retDetections) throws Exception {
         // 등급이 매겨진 세트에 다시 보내면 409, 본인 렌탈이 아닌 고객은 403
         mvc.perform(post("/api/v1/captures/sets/" + retSet + "/detections").with(booth())
@@ -343,6 +347,7 @@ class InspectionFlowIntegrationTest {
     //        다른 부스(booth-99) 토큰으로도 보낸다.
     // [기대] 두 번째 요청이 첫 번째를 통째로 바꾼다(받은 수 2 → 1). 없는 사진을 가리키면 400, 다른 부스는 403이다.
     //        면 펼치기 뒤 등급이 나면 마지막 요청의 깨짐 하나만 남아 D다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음, 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
     @Test
     @DisplayName("부스 탐지는 같은 세트에 다시 오면 통째로 바뀌고, 세트에 없는 사진을 가리키면 400, 다른 부스는 403이다")
     void detectionsReplaceAndValidate() throws Exception {

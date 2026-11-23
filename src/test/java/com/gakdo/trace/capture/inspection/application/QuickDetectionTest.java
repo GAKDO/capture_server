@@ -63,6 +63,7 @@ class QuickDetectionTest {
 
     // [상황] 부스가 "분석한 사진 목록(analyzedPhotos)" 없이 탐지 결과를 보낸다.
     // [기대] 400(analyzedPhotos 칸 오류)으로 거절하고, 흠집 저장도 등급 판정도 하지 않는다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("빠른 검사 탐지 요청에 analyzedPhotos가 없으면 400(analyzedPhotos)이고 저장·등급을 하지 않는다")
     void analyzedRequired() {
@@ -78,6 +79,7 @@ class QuickDetectionTest {
 
     // [상황] 12장 중 한 장이 분석 목록에서 빠졌다.
     // [기대] 400으로 거절해 일부만 분석한 결과로 등급이 나지 않는다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("TOP·BOT 사진 중 하나라도 분석 목록에서 빠지면 400이라 일부만 분석한 결과로 등급이 나지 않는다")
     void partialRejected() {

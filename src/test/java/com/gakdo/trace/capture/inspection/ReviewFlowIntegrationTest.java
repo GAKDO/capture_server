@@ -99,6 +99,8 @@ class ReviewFlowIntegrationTest {
     //        - 검수 완료하면 기각한 찍힘을 빼고 긁힘 하나로 등급 B가 난다. 같은 키로 다시 보내면 200, 다른 키는 409 REVIEW_CLOSED.
     //        - 등급 이벤트(스키마 1.3)에 등급 B와 검수한 관리자·기각 1건이 실린다.
     //        - 고객에게는 기각한 찍힘이 보이지 않고 긁힘 하나만 보인다. 검수 완료 목록에도 나온다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등), 400 = 요청 내용이 형식에 맞지 않음,
+    //          403 = 권한 없음(누구인지는 알지만 허락되지 않은 일), 200 = 정상 처리됨
     @Test
     @DisplayName("AI 후보가 있는 빠른 검사는 검수 완료 뒤에만 등급이 나고, 기각한 찍힘은 빠져 긁힘 하나로 B, 이벤트에 검수 기록이 실린다")
     void reviewThenGrade() throws Exception {
@@ -128,6 +130,7 @@ class ReviewFlowIntegrationTest {
         assertThat(rabbit.receive(graded.getName(), 500)).isNull();
 
         // PENDING이 남은 채로 완료하면 409
+        // ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
         mvc.perform(post("/api/v1/captures/checkpoints/" + CP + "/reviews/complete").with(admin())
                 .header("Idempotency-Key", "review-" + CP))
                 .andExpect(status().isConflict())
@@ -137,6 +140,7 @@ class ReviewFlowIntegrationTest {
         String scratch = idOf(held, "scratch");
         String dent = idOf(held, "dent");
         // 기각에 사유가 없으면 400
+        // ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
         mvc.perform(post("/api/v1/captures/checkpoints/" + CP + "/reviews").with(admin())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"items\":[{\"defectId\":\"" + dent + "\",\"decision\":\"DISMISSED\"}]}"))
@@ -163,6 +167,7 @@ class ReviewFlowIntegrationTest {
                 .andExpect(jsonPath("$.review.confirmed").value(1))
                 .andExpect(jsonPath("$.review.completedAt").isNotEmpty());
         // 같은 키로 다시 보내도 200, 다른 키는 409
+        // ※ 응답 코드: 200 = 정상 처리됨, 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
         mvc.perform(post("/api/v1/captures/checkpoints/" + CP + "/reviews/complete").with(admin())
                 .header("Idempotency-Key", "review-" + CP))
                 .andExpect(status().isOk());
