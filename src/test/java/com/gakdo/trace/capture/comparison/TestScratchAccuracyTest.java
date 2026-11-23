@@ -1,3 +1,8 @@
+// 이 파일이 확인하는 것: 시점 비교(출고 vs 반납)에서 "새 흠집인지, 원래 있던 흠집인지" 판정이 얼마나 정확한지(FR-INS-03).
+// 정답을 아는 가짜 흠집을 고정 시드(42)로 300개 상황씩 만들고, 실제에서 생기는 어려움을 일부러 넣는다:
+// 두 시점 사이 면 맞추기 오차(이동·회전), 흠집 일부만 탐지, CAM1·CAM2 중복 탐지, 종류 오분류, 이번엔 못 잡은 흠집.
+// 결과는 target/view-match-accuracy.txt에 남고 specs/002-view-comparison/accuracy.md에 옮겨 적는다.
+
 package com.gakdo.trace.capture.comparison;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,9 +44,13 @@ class TestScratchAccuracyTest {
     private static final double FACE_H = 210;
 
     /** 조건: 이름, 최대 이동(mm), 최대 회전(°), 신규 흠집과 기존 흠집 사이 최소 거리(mm). */
+    // 테스트 도구: 시험 조건(이름, 최대 이동 mm, 최대 회전 °, 새 흠집이 기존 흠집과 떨어진 최소 거리 mm).
     record Condition(String name, double shiftMm, double rotateDeg, double newGapMm) {
     }
 
+    // [상황] 세 조건으로 정확도를 잰다: 보통(±2mm·±0.5°), 정합 나쁨(±4mm·±1°), 새 흠집이 기존 흠집 가까이(3~8mm) 생김.
+    // [기대] 보통 조건에서 신규·기존 판정 정확도 97% 이상, 전체 정확도 95% 이상,
+    //        원래 있던 흠집을 새 흠집으로 잘못 봐서 고객이 억울하게 차감당하는 경우가 1% 이하다.
     @Test
     @DisplayName("테스트 흠집 판정 정확도를 기록한다: 보통 정합 오차(±2 mm, ±0.5°)에서 신규·기존 판정 97% 이상, 억울한 신규 1% 이하")
     void recordsAccuracy() throws IOException {
@@ -66,6 +75,8 @@ class TestScratchAccuracyTest {
         assertThat((double) base.falseNew() / base.total()).isLessThanOrEqualTo(0.01);
     }
 
+    // 테스트 도구: 한 조건으로 300개 상황을 만들어 비교기를 돌리고 정확도를 합산한다.
+    //        상황마다 출고 흠집 1~5개(중복 탐지 포함), 반납 때 10%는 못 잡고 30%는 일부만 잡고 10%는 종류를 틀리게 하며, 새 흠집 0~2개를 더한다.
     private static Report run(Condition c, Random rnd) {
         ViewComparator comparator = new ViewComparator(MatchRule.V1);
         List<Report> reports = new ArrayList<>();
@@ -114,6 +125,7 @@ class TestScratchAccuracyTest {
     }
 
     /** 실제 위치 기준으로 기존 흠집과 newGapMm(보통 조건은 8mm, 가까움 조건은 3~8mm) 떨어진 새 흠집. */
+    // 테스트 도구: 기존 흠집과 정해진 거리만큼 떨어진 자리에 새 흠집을 놓는다(못 찾으면 없음).
     private static List<Point> placeNew(List<List<Point>> old, double minGap, Random rnd) {
         double maxGap = minGap < 8 ? 8 : Double.MAX_VALUE;
         for (int t = 0; t < 200; t++) {
@@ -127,6 +139,7 @@ class TestScratchAccuracyTest {
     }
 
     /** 폭 1 mm, 임의 방향의 긁힘(가는 직사각형). */
+    // 테스트 도구: 면(300×210mm) 안 임의 자리·방향에 폭 1mm 긁힘을 만든다.
     private static List<Point> scratch(Random rnd, double length) {
         double cx = 30 + rnd.nextDouble() * (FACE_W - 60);
         double cy = 30 + rnd.nextDouble() * (FACE_H - 60);
@@ -140,6 +153,7 @@ class TestScratchAccuracyTest {
     }
 
     /** 길이의 50~100%만 탐지(앞쪽 두 꼭짓점을 안쪽으로 당김). */
+    // 테스트 도구: 긁힘 길이의 50~100%만 잡힌 것처럼 만든다.
     private static List<Point> partial(List<Point> s, Random rnd) {
         double keep = 0.5 + rnd.nextDouble() * 0.5;
         Point a = lerp(s.get(0), s.get(1), keep);
@@ -148,6 +162,7 @@ class TestScratchAccuracyTest {
     }
 
     /** 면 가운데를 중심으로 회전 th, 이동 (dx, dy): 시점 사이 정합 오차. */
+    // 테스트 도구: 두 시점 사이 면 맞추기 오차(면 가운데 기준 회전 + 이동)를 넣는다.
     private static List<Point> misalign(List<Point> s, double dx, double dy, double th) {
         double ox = FACE_W / 2;
         double oy = FACE_H / 2;
@@ -157,14 +172,17 @@ class TestScratchAccuracyTest {
     }
 
     /** 꼭짓점마다 ±0.5 mm 탐지 흔들림. */
+    // 테스트 도구: 꼭짓점마다 ±0.5mm 탐지 흔들림을 넣는다.
     private static List<Point> jitter(List<Point> s, Random rnd) {
         return s.stream().map(p -> new Point(p.x() + rnd.nextDouble() - 0.5, p.y() + rnd.nextDouble() - 0.5)).toList();
     }
 
+    // 테스트 도구: 두 점 사이의 점을 구한다.
     private static Point lerp(Point a, Point b, double t) {
         return new Point(a.x() + (b.x() - a.x()) * t, a.y() + (b.y() - a.y()) * t);
     }
 
+    // 테스트 도구: 윗면(TOP) 흠집 관측 하나를 만든다.
     private static DefectObservation obs(String id, DefectClass cls, List<Point> polygon) {
         return new DefectObservation(id, Face.TOP, cls, polygon);
     }

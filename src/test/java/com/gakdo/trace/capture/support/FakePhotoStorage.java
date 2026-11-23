@@ -1,3 +1,6 @@
+// 테스트 도구(테스트 자체는 아님): MinIO 대신 쓰는 메모리 사진 저장소.
+// put으로 "사진이 올라갔다"(파일 키 → SHA-256)를 흉내 내고, 사전 서명 URL은 가짜 주소로 만들어 준다.
+
 package com.gakdo.trace.capture.support;
 
 import java.time.Duration;

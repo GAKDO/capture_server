@@ -1,3 +1,7 @@
+// 테스트 도구(테스트 자체는 아님): 시험용 로그인 토큰(JWT) 만들기.
+// auth-server가 실제로 넣어 주는 정보(역할 role, 권한 범위 scope, 렌탈 목록 rentals·rentalId)를 흉내 낸다.
+// 관리자(ADMIN), 일반 고객, QR로 받은 고객 촬영 토큰, 부스(BOOTH) 토큰을 만들 수 있다. 진짜 비밀값은 없다.
+
 package com.gakdo.trace.capture.support;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -19,6 +23,7 @@ public final class TestJwts {
     private TestJwts() {
     }
 
+    // 테스트 도구: 관리자 토큰.
     public static JwtRequestPostProcessor admin() {
         return jwt().jwt(j -> j.subject("admin0000000000000001").claim("role", "ADMIN"))
                 .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
@@ -38,10 +43,12 @@ public final class TestJwts {
                 .authorities(new SimpleGrantedAuthority("ROLE_CUSTOMER"));
     }
 
+    // 테스트 도구: 기본 렌탈·시점으로 만든 고객 촬영 토큰.
     public static JwtRequestPostProcessor capture() {
         return capture(CHECKPOINT, RENTAL);
     }
 
+    // 테스트 도구: 부스 토큰(부스 ID가 곧 권한 범위).
     public static JwtRequestPostProcessor booth(String boothId) {
         return jwt().jwt(j -> j.subject(boothId).claim("role", "BOOTH").claim("scope", boothId))
                 .authorities(new SimpleGrantedAuthority("ROLE_BOOTH"));
