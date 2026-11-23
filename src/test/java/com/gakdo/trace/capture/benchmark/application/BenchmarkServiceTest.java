@@ -57,6 +57,7 @@ class BenchmarkServiceTest {
 
     // [상황] 부스 토큰으로 벤치마크 목록을 요청한다.
     // [기대] 거절(403)하고 DB는 아예 읽지 않는다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
     @Test
     @DisplayName("관리자가 아니면 403이고 DB를 읽지 않는다")
     void adminOnly() {

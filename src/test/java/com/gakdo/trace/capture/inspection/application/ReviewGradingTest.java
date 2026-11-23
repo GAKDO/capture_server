@@ -158,6 +158,7 @@ class ReviewGradingTest {
 
     // [상황] 후보 2개를 아직 하나도 정하지 않은 채 검수 완료를 누른다.
     // [기대] 409 REVIEW_PENDING_REMAINS와 남은 수(2)를 알려 주고, 검수 완료 시각은 남기지 않는다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("PENDING이 남아 있으면 검수 완료는 409 REVIEW_PENDING_REMAINS(남은 수 pending)")
     void completeWithPendingIs409() {
@@ -176,6 +177,7 @@ class ReviewGradingTest {
 
     // [상황] 부스 탐지 결과가 오기 전에 검수 완료를 누르고, 탐지가 온 뒤 후보가 없는 상태에서 다시 누른다.
     // [기대] 처음엔 409 REVIEW_NOT_READY(아직 검수할 수 없음), 후보 없는 세트는 이미 바로 등급이 나므로 409 REVIEW_CLOSED다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("부스 탐지가 오기 전에는 검수 완료가 409 REVIEW_NOT_READY, 후보 없는 세트는 409 REVIEW_CLOSED")
     void notReadyOrNoCandidates() {
@@ -215,6 +217,7 @@ class ReviewGradingTest {
 
     // [상황] 검수 완료를 같은 키로 두 번 보내고, 다른 키로 한 번 더 보낸 뒤, 완료된 세트에 결정을 다시 저장하려 한다.
     // [기대] 같은 키 재전송은 다시 매기지 않아 등급 이벤트는 한 번만 나간다. 다른 키와 완료 뒤 결정 저장은 409 REVIEW_CLOSED다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("같은 Idempotency-Key로 다시 완료하면 다시 매기지 않고, 다른 키면 409 REVIEW_CLOSED. 완료 뒤 결정 저장도 409")
     void completeIsIdempotent() {
@@ -240,6 +243,7 @@ class ReviewGradingTest {
 
     // [상황] 결정 두 건을 함께 보내는데, 하나는 이 시점의 후보가 아닌 모르는 흠집 ID다.
     // [기대] 404로 거절하고 아무것도 바꾸지 않는다(맞는 ID의 후보도 PENDING 그대로, 일부만 저장되지 않음).
+    //        ※ 응답 코드: 404 = 찾을 수 없음(없는 주소나 데이터)
     @Test
     @DisplayName("이 시점의 후보가 아닌 defectId가 하나라도 있으면 아무것도 바꾸지 않고 404")
     void unknownDefectChangesNothing() {
@@ -259,6 +263,7 @@ class ReviewGradingTest {
 
     // [상황] 사유 없는 기각을 보내고, 또 확정에 사유를 붙이거나 같은 흠집을 두 번 보낸다.
     // [기대] 400으로 거절하고 틀린 칸(items[0].reason, items[1].defectId)을 알려 준다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("기각에는 사유가 꼭 있고 다른 결정에는 없으며, 같은 흠집을 두 번 보내면 400")
     void validationRules() {
@@ -276,6 +281,7 @@ class ReviewGradingTest {
 
     // [상황] 고객 토큰으로 검수 목록·검수 완료를 요청하고, 관리자가 목록을 "기각" 상태로 걸러 달라고 한다.
     // [기대] 고객은 403이다. 목록은 대기·완료로만 거를 수 있어 "기각"은 400이다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일), 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("관리자가 아니면 검수 목록·저장·완료 모두 403, 목록에 DISMISSED를 주면 400")
     void adminOnly() {

@@ -49,6 +49,7 @@ class QuickSetDomainTest {
 
     // [상황] 방식을 정하지 않고 부스 세트를 만든 뒤 TOP·BOT 사진만으로 완료하려 한다.
     // [기대] 기본 방식은 전체 검사라 8면이 없으면 409 CAPTURE_FACES_MISSING(빠진 면 있음)으로 완료되지 않는다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("profile 없이 만든 부스 세트는 FULL이고 지금처럼 8면이 있어야 완료된다")
     void defaultIsFull() {
@@ -72,6 +73,7 @@ class QuickSetDomainTest {
 
     // [상황] 빠른 검사에서 바닥(BOT) 사진이 빠졌고, 또 BOT을 "뒤집지 못함"으로 건너뛰려 한다.
     // [기대] 빠진 면 BOT으로 409를 내고, BOT은 필수 면이라 건너뛰기도 400으로 거절한다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등), 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("빠른 검사 세트에서 BOT이 빠지면 409 CAPTURE_FACES_MISSING, BOT은 건너뛸 수도 없다")
     void quickMissingBottom() {
@@ -90,6 +92,7 @@ class QuickSetDomainTest {
 
     // [상황] 빠른 검사에서 윗면(TOP)이 CAM1 사진만 올라오고 CAM2 사진이 없다.
     // [기대] 반만 찍힌 것이므로 TOP을 빠진 면으로 보고 409를 낸다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("빠른 검사 세트에서 한 면이 CAM1으로만 올라오면 반만 찍힌 것이라 409 CAPTURE_FACES_MISSING")
     void quickNeedsBothCameras() {
@@ -104,6 +107,7 @@ class QuickSetDomainTest {
 
     // [상황] 폰 촬영으로 빠른 검사 세트를 만들려 한다.
     // [기대] 빠른 검사는 부스 전용이라 400(profile 칸 오류)으로 거절한다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("폰으로 빠른 검사 세트를 만들면 400(profile)")
     void quickPhoneRejected() {

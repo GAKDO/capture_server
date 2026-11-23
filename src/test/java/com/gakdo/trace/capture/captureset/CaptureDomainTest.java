@@ -65,6 +65,7 @@ class CaptureDomainTest {
 
     // [상황] 같은 (면, 조명, 카메라) 사진을 두 번 알리거나, 폰 세트인데 부스 조명(L1)을 적었다.
     // [기대] 400으로 거절하고 어느 칸이 틀렸는지(photos[1], photos[0].light) 알려 준다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("같은 세트 안에 (면, 조명, 카메라)가 겹치거나 출처와 맞지 않는 카메라·조명이면 400")
     void openValidates() {
@@ -94,6 +95,7 @@ class CaptureDomainTest {
 
     // [상황] 부스 세트에서 윗면과 키보드 사진이 빠진 채 완료하려 한다.
     // [기대] 409 CAPTURE_FACES_MISSING과 빠진 면 목록(TOP, KB, 계약 순서)을 돌려준다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("세트 출처의 필수 면이 빠지면 409 CAPTURE_FACES_MISSING과 빠진 면 목록(codes.yaml 순서)")
     void missingFaces() {
@@ -132,6 +134,7 @@ class CaptureDomainTest {
 
     // [상황] 흰 화면(SCR1) 사진을 알렸지만 올리지 않았다. 한 번은 건너뛴 이유("화면이 켜지지 않음")를 적고, 한 번은 안 적는다.
     // [기대] 이유가 있으면 통과, 없으면 400(skippedFaces.SCR1 칸 오류)이다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("SCR1은 선택이고 건너뛸 때는 skippedFaces에 사유를 남긴다: 사유가 있으면 통과, 없으면 400")
     void optionalFaceNeedsReason() {
@@ -148,6 +151,7 @@ class CaptureDomainTest {
 
     // [상황] 부스 세트에서 필수 면인 키보드를 건너뛰려 한다. 폰 세트에서도 키보드를 건너뛰려 한다.
     // [기대] 부스는 400(skippedFaces.KB)으로 거절하고, 폰은 키보드가 필수가 아니라 통과한다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("필수 면은 skippedFaces에 넣을 수 없다(400, skippedFaces.KB)")
     void requiredNotSkippable() {
@@ -159,6 +163,7 @@ class CaptureDomainTest {
 
     // [상황] 올라간 사진 하나의 SHA-256이 처음 알린 값과 다르다(바뀌었거나 다른 파일).
     // [기대] 409 CAPTURE_HASH_MISMATCH로 완료를 거절한다(증거 사진 바꿔치기 방지).
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("올라간 사진의 해시가 알린 값과 다르면 409 CAPTURE_HASH_MISMATCH")
     void hashMismatch() {
@@ -171,6 +176,7 @@ class CaptureDomainTest {
 
     // [상황] 세트를 완료한 뒤 한 번 더 완료하려 한다.
     // [기대] 처음엔 "올림 완료"(UPLOADED)가 되고 사진이 올라간 것으로 표시된다. 두 번째는 409 CAPTURE_SET_CLOSED로 거절한다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("완료된 세트는 다시 완료할 수 없다(409 CAPTURE_SET_CLOSED)")
     void completeOnce() {

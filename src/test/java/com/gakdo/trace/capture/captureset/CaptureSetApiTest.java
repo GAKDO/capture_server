@@ -118,6 +118,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 출고를 부스 전체 검사로 완료한 렌탈에서, 수령을 빠른 검사로 만들려 하고 다음엔 전체 검사로 만든다.
     // [기대] 빠른 검사는 400(profile 칸 오류, 안내에 "전체 검사")으로 거절하고, 전체 검사는 201로 만들어진다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음, 201 = 새로 만들어짐
     @Test
     @DisplayName("출고를 전체 검사로 완료한 렌탈은 수령을 빠른 검사로 만들면 400(profile), 전체 검사는 201")
     void receiptMustFollowCheckoutFull() throws Exception {
@@ -132,6 +133,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 출고를 빠른 검사로 완료한 렌탈에서, 수령을 부스 전체 검사로, 또 폰으로 만들려 하고, 마지막엔 빠른 검사로 만든다.
     // [기대] 전체 검사·폰은 400(profile)으로 거절하고, 빠른 검사만 201로 만들어진다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음, 201 = 새로 만들어짐
     @Test
     @DisplayName("출고를 빠른 검사로 완료한 렌탈은 수령을 전체 검사·폰으로 만들면 400, 빠른 검사는 201")
     void receiptMustFollowCheckoutQuick() throws Exception {
@@ -162,6 +164,7 @@ class CaptureSetApiTest extends WebTestBase {
     // [상황] 출고를 빠른 검사로 완료한 뒤 여러 토큰으로 "이 렌탈의 기준 방식"을 조회한다.
     // [기대] 다른 시점을 찍으려는 부스에는 QUICK과 기준 시점(출고)을 알려 준다. 출고 시점 자신을 다시 찍는 경우엔 기준이 없다.
     //        그 렌탈의 고객 촬영 토큰·일반 고객은 볼 수 있고, 다른 렌탈이면 403이다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
     @Test
     @DisplayName("기준 방식 조회: 지금 찍는 시점은 빼고 출고 세트 방식을 돌려준다, 범위 밖 토큰은 403")
     void rentalProfileQuery() throws Exception {
@@ -243,6 +246,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 같은 (면, 조명, 카메라) 사진을 두 번 알린다.
     // [기대] 400 VALIDATION_FAILED, 틀린 칸은 photos[1]이다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("같은 세트 안에 (face, light, camera)가 겹치면 400 VALIDATION_FAILED(photos[i])")
     void duplicatePhoto() throws Exception {
@@ -256,6 +260,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 폰 세트인데 카메라를 CAM1(부스 카메라)로 적었다.
     // [기대] 400, 틀린 칸은 photos[0].camera다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("source와 맞지 않는 카메라(PHONE인데 CAM1)는 400")
     void wrongCamera() throws Exception {
@@ -267,6 +272,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 촬영 시각에 시간대가 없거나, 모르는 칸(boothId)을 넣거나, 해시를 대문자로 적거나, 사진 목록이 비어 있다.
     // [기대] 모두 400으로 거절한다(고객이 boothId를 마음대로 넣지 못함).
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("형식 오류(오프셋 없는 takenAt, 모르는 필드, 대문자 해시, 빈 사진 목록)는 400")
     void malformed() throws Exception {
@@ -289,6 +295,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] QR로 받은 고객 촬영 토큰으로 다른 시점, 다른 렌탈, 부스 출처 세트를 만들려 한다.
     // [기대] 모두 403 OUT_OF_SCOPE(토큰 범위 밖)다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
     @Test
     @DisplayName("촬영 JWT로 다른 checkpointId·rentalId나 source=BOOTH로 세트를 만들면 403 OUT_OF_SCOPE")
     void captureTokenScope() throws Exception {
@@ -304,6 +311,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 부스가 한 시점에 세트를 만든 뒤, 같은 시점에 다른 렌탈로 세트를 만들려 하고, 같은 렌탈로 다시 찍는다.
     // [기대] 다른 렌탈은 403 OUT_OF_SCOPE(시점과 렌탈이 어긋나는 것 방지), 같은 렌탈 재촬영은 만들어진다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
     @Test
     @DisplayName("이미 다른 렌탈로 세트가 있는 시점에 부스가 다른 렌탈로 세트를 만들면 403 OUT_OF_SCOPE, 같은 렌탈 재촬영은 된다")
     void boothCheckpointRentalPair() throws Exception {
@@ -318,6 +326,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 부스 토큰으로 폰 출처 세트를 만들려 한다.
     // [기대] 403 OUT_OF_SCOPE다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
     @Test
     @DisplayName("부스 토큰으로 source=PHONE 세트를 만들면 403 OUT_OF_SCOPE")
     void boothScope() throws Exception {
@@ -328,6 +337,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 촬영 범위가 없는 일반 고객 토큰으로 세트 만들기·완료·조회를 하고, 관리자 토큰으로 세트를 만들려 한다.
     // [기대] 일반 고객은 모두 403 FORBIDDEN이고, 관리자도 세트는 만들 수 없다(403). 사진은 부스나 QR 촬영으로만 올린다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일)
     @Test
     @DisplayName("scope 없는 일반 CUSTOMER 토큰은 세트 생성·완료·조회 모두 403 FORBIDDEN, ADMIN은 생성 403")
     void plainCustomer() throws Exception {
@@ -346,6 +356,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 토큰 없이 세트를 조회한다.
     // [기대] 401 UNAUTHENTICATED를 오류 형식(Problem Details)으로 돌려준다.
+    //        ※ 응답 코드: 401 = 로그인 필요(토큰이 없거나 만료·위조됨)
     @Test
     @DisplayName("토큰이 없으면 401 UNAUTHENTICATED Problem Details")
     void unauthenticated() throws Exception {
@@ -357,6 +368,7 @@ class CaptureSetApiTest extends WebTestBase {
     // [상황] 다른 부스(booth-02)나 고객 촬영 토큰으로 부스 세트를 완료하려 한다. 폰 세트는 자기 시점·다른 시점 토큰·부스 토큰으로 조회한다.
     // [기대] 다른 부스·고객의 부스 세트 완료는 403 OUT_OF_SCOPE. 폰 세트는 자기 시점 토큰만 볼 수 있고,
     //        다른 시점은 403 OUT_OF_SCOPE, 부스는 403 FORBIDDEN이다. 없는 세트는 관리자에게도 404다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일), 404 = 찾을 수 없음(없는 주소나 데이터)
     @Test
     @DisplayName("다른 부스·다른 시점의 세트를 완료하면 403 OUT_OF_SCOPE, 촬영 JWT는 자기 시점 세트만 조회")
     void completeAndGetScope() throws Exception {
@@ -382,6 +394,7 @@ class CaptureSetApiTest extends WebTestBase {
     // [기대] 202와 "올림 완료"(UPLOADED), 사진은 올라감으로 보인다. "업로드 완료" 이벤트가 딱 하나 나가며,
     //        렌탈·시점·세트 ID, 사진 16장(저장 경로 포함), 부스는 이미 탐지를 했으므로 탐지 필요 없음(needDetection=false)이 실린다.
     //        건너뛴 면·기종 정보가 없으면 이벤트에서 그 칸을 빼고, 이벤트 ID는 21자다.
+    //        ※ 응답 코드: 202 = 접수됨(처리는 이어서 진행)
     @Test
     @DisplayName("필수 면이 모두 올라간 부스 세트를 완료하면 202 UPLOADED, trace.capture.uploaded 하나(needDetection=false)")
     void completeBooth() throws Exception {
@@ -412,6 +425,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 부스 세트를 완료하려는데 키보드(KB) 사진만 실제로 올라가지 않았다.
     // [기대] 409 CAPTURE_FACES_MISSING(빠진 면 KB)으로 완료되지 않고, 이벤트도 없으며, 세트는 "올리는 중" 그대로다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("세트 출처의 필수 면이 빠지면 세트가 완료되지 않는다(409 CAPTURE_FACES_MISSING, missingFaces)")
     void facesMissing() throws Exception {
@@ -452,6 +466,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 치수가 0이거나 기종 코드가 소문자(형식 틀림)다.
     // [기대] 400 VALIDATION_FAILED다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("기종 치수가 0 이하이거나 기종 코드 형식이 틀리면 400 VALIDATION_FAILED")
     void deviceInvalid() throws Exception {
@@ -467,6 +482,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 폰 세트(7면 + 흰 화면)를 다 올리고 완료한다.
     // [기대] 키보드 없이 202로 완료되고, 이벤트에 서버 탐지 필요(needDetection=true, 폰은 부스 탐지가 없음)와 올린 사진 8장이 실린다.
+    //        ※ 응답 코드: 202 = 접수됨(처리는 이어서 진행)
     @Test
     @DisplayName("폰의 필수 면은 TOP·BOT·SF·SB·SL·SR·SCR0 7면이다: KB 없이 202, needDetection=true")
     void completePhone() throws Exception {
@@ -481,6 +497,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 흰 화면(SCR1) 사진을 알렸지만 올리지 못했다. 이유 없이 완료하고, 다음엔 "화면이 켜지지 않음" 이유를 붙여 완료한다.
     // [기대] 이유가 없으면 400(skippedFaces.SCR1), 이유가 있으면 202이고 이벤트에 SCR1 사진 없이 건너뛴 면과 이유가 실린다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음, 202 = 접수됨(처리는 이어서 진행)
     @Test
     @DisplayName("SCR1을 올리지 못하고 skippedFaces에 사유를 남기면 202, 이벤트에 SCR1 사진 없이 skippedFaces가 실린다")
     void skipScr1() throws Exception {
@@ -504,6 +521,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 부스 세트를 완료하면서 필수 면인 키보드를 "못 찍음"으로 건너뛰려 한다.
     // [기대] 400 VALIDATION_FAILED, 틀린 칸은 skippedFaces.KB다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("skippedFaces에 필수 면(부스 KB)을 넣으면 400 VALIDATION_FAILED, field skippedFaces.KB")
     void skipRequired() throws Exception {
@@ -517,6 +535,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 폰 세트의 윗면 사진이 알린 해시와 다른 파일로 올라갔다.
     // [기대] 409 CAPTURE_HASH_MISMATCH로 완료를 거절한다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("올라간 객체의 SHA-256이 알린 값과 다르면 409 CAPTURE_HASH_MISMATCH")
     void hashMismatch() throws Exception {
@@ -531,6 +550,8 @@ class CaptureSetApiTest extends WebTestBase {
     // [상황] 완료 요청을 Idempotency-Key 없이/너무 짧게 보내고, 같은 키·같은 본문으로 두 번, 같은 키·다른 본문, 다른 키로 보낸다.
     // [기대] 키가 없거나 짧으면 400. 같은 키·같은 본문은 처음 응답을 그대로 돌려주고 이벤트를 다시 내지 않는다(네트워크 재시도 안전).
     //        같은 키·다른 본문은 422 IDEMPOTENCY_KEY_CONFLICT, 다른 키는 이미 완료라 409 CAPTURE_SET_CLOSED다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음, 422 = 형식은 맞지만 내용이 규칙에 어긋남,
+    //          409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("같은 Idempotency-Key·같은 본문은 처음 응답을 그대로, 다른 본문은 422, 다른 키는 409 CAPTURE_SET_CLOSED, 키가 없으면 400")
     void idempotency() throws Exception {
@@ -637,6 +658,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 세트에 없는 사진(윗면 L2)을 고르거나, 빈 목록, 카메라가 빠진 항목, 모르는 칸(sha256)이 든 항목으로 다시 받으려 한다.
     // [기대] 모두 400이고, 없는 사진은 몇 번째 항목인지(photos[1]) 알려 준다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("세트에 없는 (face, light, camera)나 형식 오류는 400 VALIDATION_FAILED(photos[i])")
     void reissueUnknownPhoto() throws Exception {
@@ -655,6 +677,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 이미 완료된 세트의 업로드 주소를 다시 받으려 한다.
     // [기대] 409 CAPTURE_SET_CLOSED다(완료 뒤 사진 바꿔 올리기 방지).
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("완료된 세트의 URL을 다시 받으면 409 CAPTURE_SET_CLOSED")
     void reissueClosed() throws Exception {
@@ -668,6 +691,7 @@ class CaptureSetApiTest extends WebTestBase {
 
     // [상황] 다른 부스, 고객 촬영 토큰, 다른 시점 토큰, 부스(폰 세트에), 일반 고객, 관리자, 없는 세트로 주소를 다시 받으려 한다.
     // [기대] 다른 부스·다른 시점·남의 출처는 403 OUT_OF_SCOPE, 일반 고객·관리자는 403 FORBIDDEN, 없는 세트는 404다.
+    //        ※ 응답 코드: 403 = 권한 없음(누구인지는 알지만 허락되지 않은 일), 404 = 찾을 수 없음(없는 주소나 데이터)
     @Test
     @DisplayName("다른 부스·다른 시점은 403 OUT_OF_SCOPE, 일반 고객·관리자는 403 FORBIDDEN, 없는 세트는 404")
     void reissueScope() throws Exception {
@@ -713,6 +737,7 @@ class CaptureSetApiTest extends WebTestBase {
     }
 
     // 테스트 도구: 세트를 만들고 201인지 확인한 뒤 응답 JSON을 돌려준다.
+    // ※ 응답 코드: 201 = 새로 만들어짐
     private JsonNode created(RequestPostProcessor token, String body)
             throws Exception {
         String response = perform(post("/api/v1/captures/sets").with(token), body)
