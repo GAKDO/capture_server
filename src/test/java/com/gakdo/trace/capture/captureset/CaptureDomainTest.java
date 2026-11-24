@@ -35,6 +35,8 @@ import com.gakdo.trace.capture.common.domain.ErrorCode;
 /** 저장소·DB 없이 도는 면 규칙·완료 판정 시험. */
 class CaptureDomainTest {
 
+    // 가짜 사진 지문(SHA-256, 64자리 16진수). SHA는 "알린 지문", OTHER_SHA는 "실제로 올라온 파일이 다를 때"의 지문이다.
+    // PhotoState(면, 조명, 카메라, 알린 지문, 실제로 올라온 파일의 지문): 마지막 값이 null이면 아직 올라오지 않은 사진이다.
     private static final String SHA = "a".repeat(64);
     private static final String OTHER_SHA = "b".repeat(64);
 

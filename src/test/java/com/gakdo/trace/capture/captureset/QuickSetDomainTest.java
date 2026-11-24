@@ -34,6 +34,8 @@ import com.gakdo.trace.capture.common.domain.ErrorCode;
 /** 부스 빠른 검사 세트(contracts specs/005-booth-quick-set, 11/3 MVP). Docker 없이 도는 도메인 시험. */
 class QuickSetDomainTest {
 
+    // 가짜 사진 지문(SHA-256, 64자리 16진수). 부스가 "이 사진을 올린다"고 알릴 때 함께 보내는 값이다.
+    // PhotoState(면, 조명, 카메라, 알린 지문, 실제로 올라온 파일의 지문): 마지막 값이 null이면 아직 올라오지 않은 사진이다.
     private static final String SHA = "a".repeat(64);
 
     // [상황] 검사 방식 코드와 빠른 검사 필수 면을 확인한다.

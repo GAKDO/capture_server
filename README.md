@@ -57,6 +57,15 @@ AI는 후보를 넓게 잡고, 관리자가 확정한 흠집만 등급에 들어
 
 줄 커버리지 40% 미만이면 실패합니다(블로그와 같은 기준).
 
+테스트는 두 가지입니다.
+
+| 종류 | 파일 | Docker 없을 때 |
+|---|---|---|
+| 도메인·컨트롤러 시험 | `*DomainTest`, `*ControllerTest` 등 나머지 전부 | 그대로 돕니다(DB·메시지 큐 없이 가짜로 바꿔 끼움) |
+| 통합 시험(실제 PostgreSQL·RabbitMQ·S3 호환 저장소) | `CaptureIntegrationTest`(촬영 업로드 끝까지), `InspectionFlowIntegrationTest`(출고→수령→반납 검사·등급), `ReviewFlowIntegrationTest`(사람 검수) | **건너뜁니다**(`@Testcontainers(disabledWithoutDocker = true)`). GitHub Actions에서는 Docker가 있어 모두 돕니다 |
+
+`S3_TEST_ENDPOINT`를 주면 `CaptureIntegrationTest`가 컨테이너 대신 그 S3 호환 주소(예: 실제 MinIO)를 씁니다. 테스트마다 `@DisplayName`과 `[상황]`·`[기대]` 주석이 한국어로 달려 있습니다.
+
 ## CI/CD
 
 | 워크플로 | 언제 | 하는 일 |
