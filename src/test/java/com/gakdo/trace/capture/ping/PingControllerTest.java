@@ -15,6 +15,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.gakdo.trace.capture.support.WebTestBase;
 
+/**
+ * capture-server의 ping(점검) 주소 시험. 배포 뒤 "서버가 떴는지, 어떤 버전·커밋이 돌고 있는지" 확인할 때 부르는 주소다.
+ * 컨트롤러만 띄우는 가벼운 시험(DB·메시지 큐 없음)이며, 커밋 값은 test-sha로 고정해 응답에 그대로 나오는지 본다.
+ */
 @WebMvcTest(controllers = PingController.class, properties = "app.commit=test-sha")
 class PingControllerTest extends WebTestBase {
 

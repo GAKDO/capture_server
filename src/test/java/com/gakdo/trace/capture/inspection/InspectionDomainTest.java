@@ -95,6 +95,8 @@ class InspectionDomainTest {
     @Test
     @DisplayName("면을 찍은 카메라마다 정합·품질 통과 사진이 있어야 판정 가능하고, 한 카메라가 모두 실패하면 판정 불가다")
     void faceNeedsAUsablePhotoPerCamera() {
+        // PhotoState(면, 카메라, 올라옴, 품질 통과, 정합 성공): 뒤의 true/false 세 개가 이 순서다.
+        // 셋 다 true여야 판정에 쓸 수 있는 사진이다(정합 = 사진 속 면을 반듯하게 펼치는 것).
         List<PhotoState> photos = List.of(
                 new PhotoState(Face.TOP, Camera.CAM1, true, true, true),
                 new PhotoState(Face.TOP, Camera.CAM1, true, true, false),   // 조명 하나 실패는 괜찮다
@@ -114,6 +116,7 @@ class InspectionDomainTest {
     @DisplayName("건너뛴 선택 면은 사유와 함께 판정 불가다")
     void skippedFaceIsUnjudgeable() {
         Map<Face, String> out = Judgeability.unjudgeable(
+                // 폰으로 찍은 윗면 1장: 올라옴·품질 통과·정합 성공
                 List.of(new PhotoState(Face.TOP, Camera.PHONE, true, true, true)), Map.of(Face.SCR1, "화면 꺼짐"));
         assertThat(out).containsEntry(Face.SCR1, "건너뜀(화면 꺼짐)").doesNotContainKey(Face.TOP);
     }
