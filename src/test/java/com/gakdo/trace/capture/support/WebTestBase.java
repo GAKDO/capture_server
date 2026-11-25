@@ -1,3 +1,6 @@
+// 테스트 도구(테스트 자체는 아님): 웹 요청 시험(WebMvc)들이 물려받는 바탕.
+// 운영과 같은 보안 규칙(누가 어떤 주소를 부를 수 있는지)과 같은 오류 응답 형식(Problem Details)을 쓰게 한다.
+
 package com.gakdo.trace.capture.support;
 
 import org.springframework.context.annotation.Import;

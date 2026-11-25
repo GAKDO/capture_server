@@ -6,5 +6,9 @@ main에 버전이 적힌 CHANGELOG가 올라가면 release.yml이 태그와 GitH
 
 ## [Unreleased]
 
+### 변경
+
+- CI: SonarQube 분석 뒤 품질 게이트 판정까지 기다려 실행 요약·경고·알림에 통과/실패를 남김(이미지 빌드·배포는 막지 않음)
+
 ### 추가
 - 블로그(AIGJ-01-002-blog/devlog) CI/CD를 옮겨 초기 구성

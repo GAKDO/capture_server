@@ -42,6 +42,8 @@ jobs:
           if-no-files-found: ignore
       # 코드 품질 분석. push일 때만, 레포(또는 조직) 변수 SONAR_ENABLED=true이고 SONAR_TOKEN이 있을 때만.
       # 학교 SonarQube: Secret SONAR_HOST_URL=http://s4.java21.net:9000. 품질 서버가 내려가 있어도 CI 초록은 막지 않는다
+      # 분석을 올린 뒤 품질 게이트 판정까지 기다린다(sonar.qualitygate.wait). 게이트가 깨지면 이 단계가 실패로 남아
+      # 실행 요약·경고·알림으로 바로 보인다. 이미지 빌드·배포는 막지 않는다(continue-on-error)
       - name: SonarQube 분석
         id: sonar
         if: vars.SONAR_ENABLED == 'true' && github.event_name != 'pull_request'
@@ -55,10 +57,19 @@ jobs:
           if [ -z "$SONAR_TOKEN" ]; then echo "SONAR_TOKEN이 없어 건너뜁니다."; exit 0; fi
           org=()
           if [ -n "$SONAR_ORGANIZATION" ]; then org=("-Dsonar.organization=$SONAR_ORGANIZATION"); fi
+          gate=ok
           ./mvnw -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:5.2.0.4988:sonar \
             "${org[@]}" \
             -Dsonar.projectKey="$PROJECT_KEY" \
-            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+            -Dsonar.qualitygate.wait=true -Dsonar.qualitygate.timeout=300 || gate=fail
+          if [ "$gate" = ok ]; then
+            echo "✅ SonarQube 품질 게이트 통과 (\`$PROJECT_KEY\`)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ SonarQube 품질 게이트 실패 또는 분석 실패 (\`$PROJECT_KEY\`). 이 단계 로그와 'SonarQube 이슈 내보내기' 워크플로로 확인" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::SonarQube 품질 게이트 실패 또는 분석 실패 ($PROJECT_KEY)"
+            exit 1
+          fi
       - name: SonarQube 실패 알림
         if: steps.sonar.outcome == 'failure' && (vars.DISCORD_ENABLED == 'true' || vars.TELEGRAM_ENABLED == 'true')
         uses: ./.github/actions/notify
@@ -66,8 +77,8 @@ jobs:
           discord-webhook-url: ${{ vars.DISCORD_ENABLED == 'true' && secrets.DISCORD_WEBHOOK_URL || '' }}
           telegram-bot-token: ${{ vars.TELEGRAM_ENABLED == 'true' && secrets.TELEGRAM_BOT_TOKEN || '' }}
           telegram-chat-id: ${{ vars.TELEGRAM_ENABLED == 'true' && secrets.TELEGRAM_CHAT_ID || '' }}
-          title: "[${{ github.event.repository.name }}] SonarQube 분석 실패"
-          description: "빌드·테스트는 통과했고 SonarQube 분석만 실패했습니다."
+          title: "[${{ github.event.repository.name }}] SonarQube 품질 게이트 실패"
+          description: "빌드·테스트는 통과했고 SonarQube 품질 게이트(또는 분석)가 실패했습니다."
           status: failure
           url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       - name: 실패한 테스트 보고서

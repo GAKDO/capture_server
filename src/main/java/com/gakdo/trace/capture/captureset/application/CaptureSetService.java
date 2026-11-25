@@ -39,6 +39,7 @@ import com.gakdo.trace.capture.captureset.domain.CompletionCheck.PhotoState;
 import com.gakdo.trace.capture.captureset.domain.Face;
 import com.gakdo.trace.capture.captureset.domain.Light;
 import com.gakdo.trace.capture.captureset.domain.Photo;
+import com.gakdo.trace.capture.captureset.domain.ProfileLock;
 import com.gakdo.trace.capture.captureset.domain.SetStatus;
 import com.gakdo.trace.capture.captureset.infra.CaptureSetRepository;
 import com.gakdo.trace.capture.common.domain.DomainException;
@@ -118,6 +119,14 @@ public class CaptureSetService {
         if (sets.existsByCheckpointIdAndRentalIdNot(checkpointId, rentalId)) {
             throw Caller.outOfScope();
         }
+        // 검사 방식 고정(11/13): 수령·반납은 출고와 같은 profile만. 이미 저장된 세트는 건드리지 않고 새 세트만 막는다
+        CaptureProfile range = profile == null ? CaptureProfile.FULL : profile;
+        referenceProfile(rentalId, checkpointId).filter(ref -> ref.profile() != range).ifPresent(ref -> {
+            log.info("검사 방식 불일치 거부 rental={} checkpoint={} 요청={} 기준={}(시점 {})", rentalId, checkpointId, range,
+                    ref.profile(), ref.checkpointId());
+            throw new DomainException(ErrorCode.VALIDATION_FAILED, ProfileLock.mismatchMessage(ref.profile()),
+                    List.of(new FieldError("profile", ProfileLock.mismatchMessage(ref.profile()))));
+        });
 
         CaptureSet set = CaptureSet.open(rentalId, checkpointId, source, boothId, device, profile,
                 photos.stream().map(NewPhoto::spec).toList());
@@ -130,6 +139,34 @@ public class CaptureSetService {
         log.info("촬영 세트 생성 set={} checkpoint={} source={} profile={} photos={}", set.getPublicId(), checkpointId,
                 source, set.getProfile(), photos.size());
         return new CaptureSetCreateResponse(set.getPublicId(), uploads);
+    }
+
+    /** 이 렌탈의 기준 검사 방식(checkpointId 시점은 뺌). 기준이 없으면 비어 있다. */
+    private java.util.Optional<ProfileLock.Reference> referenceProfile(String rentalId, String checkpointId) {
+        List<ProfileLock.SetInfo> infos = sets.findByRentalIdOrderByIdAsc(rentalId).stream()
+                .map(s -> new ProfileLock.SetInfo(s.getCheckpointId(), s.getProfile(), s.isCompleted()))
+                .toList();
+        return ProfileLock.reference(infos, checkpointId);
+    }
+
+    /**
+     * 렌탈이 써야 하는 검사 방식(contracts getRentalCaptureProfile, 11/13). 부스는 모든 렌탈, 촬영 JWT는 토큰의 렌탈,
+     * 일반 고객은 rentals 클레임의 렌탈, 관리자는 전부.
+     */
+    @Transactional(readOnly = true)
+    public RentalProfileView rentalProfile(Caller caller, String rentalId, String checkpointId) {
+        boolean allowed = caller.isAdmin() || caller.isBooth() || caller.ownsRental(rentalId)
+                || (caller.isCaptureToken() && rentalId.equals(caller.rentalId()));
+        if (!allowed) {
+            throw Caller.outOfScope();
+        }
+        return referenceProfile(rentalId, checkpointId)
+                .map(ref -> new RentalProfileView(rentalId, ref.profile().name(), ref.checkpointId()))
+                .orElseGet(() -> new RentalProfileView(rentalId, null, null));
+    }
+
+    /** contracts RentalCaptureProfile. profile·checkpointId는 기준이 없으면 null. */
+    public record RentalProfileView(String rentalId, String profile, String checkpointId) {
     }
 
     /**

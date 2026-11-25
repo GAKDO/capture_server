@@ -1,3 +1,7 @@
+// 이 파일이 확인하는 것: 카메라 사이 같은 흠집 합치기(11/9). 부스는 CAM1·CAM2 두 카메라로 같은 면을 찍으므로
+// 한 흠집이 두 사진에 다 잡힌다. 실제 면 위 위치(mm)가 가까우면 하나로 합쳐 흠집 개수가 두 배로 세지지 않게 한다.
+// 빠른 검사와 전체 검사가 함께 쓰는 규칙이다.
+
 package com.gakdo.trace.capture.inspection.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,10 +23,13 @@ import com.gakdo.trace.capture.inspection.domain.DefectGroups.Placed;
 /** 카메라 사이 같은 흠집 합치기(11/9). 빠른·전체 검사가 함께 쓴다. */
 class CrossCameraMergeTest {
 
+    // 테스트 도구: 한 카메라에서 잡힌 흠집 묶음을 면 위 위치(x, y mm)와 함께 만든다.
     private static Placed at(String id, Camera cam, DefectClass c, Double len, Boolean isNew, double x, double y) {
         return new Placed(new Group(Face.BOT, c, len, isNew, List.of(id)), Set.of(cam), new Point(x, y));
     }
 
+    // [상황] CAM1의 긁힘(12mm)과 CAM2의 찌그러짐(20mm)이 약 9mm 떨어져 있고, 합치는 거리는 15mm다.
+    // [기대] 하나로 합쳐지고, 더 심한 종류(찌그러짐)·더 긴 길이(20mm)·새 흠집 판정을 이어받는다. 두 흠집 ID를 모두 담는다.
     @Test
     @DisplayName("CAM1·CAM2 묶음이 거리 안이면 하나로 합치고 가장 심한 종류·가장 긴 길이·신규 판정을 이어받는다")
     void mergesPairWithinDistance() {
@@ -36,6 +43,8 @@ class CrossCameraMergeTest {
         assertThat(out.get(0).defectIds()).containsExactly("a", "b");
     }
 
+    // [상황] ① 두 카메라 흠집이 30mm 떨어졌다(거리 20mm 밖) ② 같은 카메라의 두 흠집이 3mm 떨어졌다 ③ 한쪽 위치를 모른다.
+    // [기대] 세 경우 모두 합치지 않는다(같은 카메라의 가까운 두 흠집은 진짜 두 개일 수 있음).
     @Test
     @DisplayName("거리 밖이거나 같은 카메라 묶음이거나 자리를 모르면 합치지 않는다")
     void keepsApart() {
@@ -51,6 +60,8 @@ class CrossCameraMergeTest {
                         null)), 20, MatchRule.V1)).hasSize(2);
     }
 
+    // [상황] CAM1 흠집 두 개(0mm, 16mm) 사이에 CAM2 흠집 하나(5mm)가 있다.
+    // [기대] CAM2 흠집은 더 가까운 a1 하나와만 합쳐지고, a2는 따로 남는다(한 흠집을 두 번 쓰지 않음).
     @Test
     @DisplayName("한쪽 카메라의 두 흠집 사이에 다른 카메라 흠집이 있으면 더 가까운 쪽 하나와만 합친다")
     void oneToOne() {
@@ -63,6 +74,8 @@ class CrossCameraMergeTest {
         assertThat(out.get(1).defectIds()).containsExactly("a2");
     }
 
+    // [상황] 이미 두 카메라가 함께 잡은 묶음 두 개가 10mm 떨어져 있다.
+    // [기대] 서로 다른 두 흠집이므로 합치지 않는다.
     @Test
     @DisplayName("이미 두 카메라가 함께 든 묶음끼리는 가까워도 합치지 않는다(서로 다른 두 흠집)")
     void bothCameraGroupsStayApart() {
@@ -73,6 +86,10 @@ class CrossCameraMergeTest {
         assertThat(DefectGroups.mergeAcrossCameras(List.of(one, two), 15, MatchRule.V1)).hasSize(2);
     }
 
+    // [상황] 실제 부스 사진(11/5~11/6, 11/9 바닥)에서 같은 흠집이 CAM1·CAM2 사진의 어디에 찍혔는지 다섯 쌍을,
+    //        부스 보정 모서리 기준으로 면 위 mm 위치로 옮긴다.
+    // [기대] 다섯 쌍 모두 두 카메라 위치가 2cm 안에서 만난다(합치기가 실제 부스에서도 통함).
+    //        보정이 없는 면(앞 옆면 SF)이나 폰 사진은 위치를 계산하지 않는다.
     @Test
     @DisplayName("부스 보정 모서리로 옮긴 실제 부스 사진의 같은 흠집은 CAM1·CAM2 위치가 2cm 안에서 만난다")
     void boothFrameAgreesAcrossCameras() {

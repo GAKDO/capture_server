@@ -1,3 +1,6 @@
+// 이 파일이 확인하는 것: 공개 보유 기기 목록의 흠집 요약과 상세(11/8). 로그인 없이 누구나 보는 화면이므로
+// 관리자가 확정한 흠집만 세고, 같은 흠집이 조명만 달리 여러 번 잡힌 것은 하나로 센다. 폰으로 찍은 세트는 공개하지 않는다.
+
 package com.gakdo.trace.capture.inspection.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,6 +55,7 @@ class CatalogQueryTest {
     private GradeResultRepository grades;
     private CatalogQueryService service;
 
+    // 테스트 도구: 가짜 흠집·등급 저장소와 가짜 사진 저장소로 공개 목록 서비스를 만든다.
     @BeforeEach
     void setUp() {
         defects = mock(DefectRepository.class);
@@ -59,6 +63,10 @@ class CatalogQueryTest {
         service = new CatalogQueryService(grades, defects, new FakePhotoStorage(), Duration.ofMinutes(10));
     }
 
+    // [상황] 부스 빠른 검사 세트에서 윗면 같은 자리에 L1 긁힘·L2 찍힘(같은 흠집), 바닥 먼 자리에 긁힘이 확정됐다.
+    //        그 밖에 관리자가 "먼지"로 기각한 오염 하나와 아직 검수 대기인 깨짐 하나가 있다. 등급은 C다.
+    // [기대] 흠집 수는 2개(윗면 묶음 1 + 바닥 1)이고 기각·검수 대기는 빠진다.
+    //        종류별로는 묶음의 가장 심한 종류로 세서 찍힘 1·긁힘 1·오염 0·깨짐 0이다.
     @Test
     @DisplayName("흠집 수는 확정한 흠집만, 조명만 다른 같은 흠집은 하나로 세고 기각·검수 대기는 뺀다")
     void countsConfirmedGroupsOnly() {
@@ -83,6 +91,9 @@ class CatalogQueryTest {
                 .containsEntry("stain", 0).containsEntry("crack", 0);
     }
 
+    // [상황] 폰으로 찍어 등급 A가 난 세트가 있다.
+    // [기대] 공개 목록에서 빠지고, 상세를 열면 404다.
+    //        ※ 응답 코드: 404 = 찾을 수 없음(없는 주소나 데이터)
     @Test
     @DisplayName("폰으로 찍은 세트는 공개 목록에서 빠지고 상세는 404")
     void phoneSetIsHidden() {
@@ -96,6 +107,8 @@ class CatalogQueryTest {
         assertThatThrownBy(() -> service.detail(checkpointId)).isInstanceOf(DomainException.class);
     }
 
+    // [상황] 윗면 같은 자리에 L1·L2로 잡힌 긁힘 두 개가 확정된 세트의 상세를 연다.
+    // [기대] 사진 12장의 보기 URL(https)을 주고, 사진 위 흠집 2개는 같은 묶음 ID를 공유하며, 흠집 수는 1개다.
     @Test
     @DisplayName("상세는 사진 보기 URL과 확정 흠집(원본 px·묶음 ID)을 주고, 같은 묶음은 대표 ID를 공유한다")
     void detailHasPhotosAndGroupedDefects() {
@@ -113,17 +126,20 @@ class CatalogQueryTest {
         assertThat(d.defectCount()).isEqualTo(1);
     }
 
+    // 테스트 도구: 흠집을 관리자가 "흠집 맞음"으로 확정한 상태로 만든다.
     private static Defect confirmed(Defect d) {
         d.review(ReviewStatus.CONFIRMED, null, "admin", OffsetDateTime.now());
         return d;
     }
 
+    // 테스트 도구: 그 세트에 등급 결과를 기록한다.
     private static GradeResult grade(CaptureSet set, Grade g) {
         GradeResult r = new GradeResult(set.getCheckpointId());
         r.recordGrade(set, g, "grade-rules-v1", List.of(), List.of());
         return r;
     }
 
+    // 테스트 도구: 다 올린 부스 빠른 검사 세트를 만든다. 폰 세트는 출처·시점만 흉내 낸 가짜로 만든다.
     private static CaptureSet gradedSet(String checkpointId, CaptureSource source) {
         if (source == CaptureSource.PHONE) {
             // 공개 여부는 출처만 보므로 폰 세트는 출처·시점만 흉내 낸다
@@ -140,12 +156,14 @@ class CatalogQueryTest {
         return set;
     }
 
+    // 테스트 도구: 세트에서 그 면·조명의 CAM1 사진 하나를 찾는다.
     private static Photo photo(CaptureSet set, Face face, Light light) {
         return set.getPhotos().stream()
                 .filter(p -> p.getFace() == face && p.getCamera() == Camera.CAM1 && p.getLight() == light)
                 .findFirst().orElseThrow();
     }
 
+    // 테스트 도구: 빠른 검사 12장 목록(BOT·TOP × L1~L3 × CAM1·CAM2)을 만든다.
     private static List<PhotoSpec> specs() {
         List<PhotoSpec> specs = new ArrayList<>();
         OffsetDateTime at = OffsetDateTime.parse("2026-11-05T10:00:00+09:00");

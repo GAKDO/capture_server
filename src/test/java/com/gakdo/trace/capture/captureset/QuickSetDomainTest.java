@@ -1,3 +1,7 @@
+// 이 파일이 확인하는 것: 부스 빠른 검사 세트 규칙(contracts specs/005-booth-quick-set, 11/3 MVP).
+// 빠른 검사는 바닥(BOT)·윗면(TOP)만 찍는 부스 전용 방식이고, 전체 검사(FULL)는 8면을 찍는다.
+// 어떤 사진이 있어야 "촬영 완료"가 되는지, 언제 등급(GRADED)으로 넘어가는지를 본다.
+
 package com.gakdo.trace.capture.captureset;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,8 +34,12 @@ import com.gakdo.trace.capture.common.domain.ErrorCode;
 /** 부스 빠른 검사 세트(contracts specs/005-booth-quick-set, 11/3 MVP). Docker 없이 도는 도메인 시험. */
 class QuickSetDomainTest {
 
+    // 가짜 사진 지문(SHA-256, 64자리 16진수). 부스가 "이 사진을 올린다"고 알릴 때 함께 보내는 값이다.
+    // PhotoState(면, 조명, 카메라, 알린 지문, 실제로 올라온 파일의 지문): 마지막 값이 null이면 아직 올라오지 않은 사진이다.
     private static final String SHA = "a".repeat(64);
 
+    // [상황] 검사 방식 코드와 빠른 검사 필수 면을 확인한다.
+    // [기대] 방식은 codes.yaml과 같은 FULL·QUICK 두 가지이고, 부스 빠른 검사 필수 면은 TOP·BOT, 부스 전체 검사는 기존 부스 필수 면과 같다.
     @Test
     @DisplayName("코드 enum은 codes.yaml capture.profile 값과 같고, 빠른 검사 필수 면은 face_required_quick.BOOTH(TOP·BOT)")
     void profileCodes() {
@@ -41,6 +49,9 @@ class QuickSetDomainTest {
                 .isEqualTo(FaceRules.required(CaptureSource.BOOTH));
     }
 
+    // [상황] 방식을 정하지 않고 부스 세트를 만든 뒤 TOP·BOT 사진만으로 완료하려 한다.
+    // [기대] 기본 방식은 전체 검사라 8면이 없으면 409 CAPTURE_FACES_MISSING(빠진 면 있음)으로 완료되지 않는다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("profile 없이 만든 부스 세트는 FULL이고 지금처럼 8면이 있어야 완료된다")
     void defaultIsFull() {
@@ -51,6 +62,8 @@ class QuickSetDomainTest {
                         e -> assertThat(e.code()).isEqualTo(ErrorCode.CAPTURE_FACES_MISSING));
     }
 
+    // [상황] 빠른 검사 세트를 만들고 TOP·BOT 사진(두 카메라)만 올렸다.
+    // [기대] 그것만으로 완료된다.
     @Test
     @DisplayName("빠른 검사 세트는 TOP·BOT 사진 4장만으로 완료된다")
     void quickCompletesWithTwoFaces() {
@@ -60,6 +73,9 @@ class QuickSetDomainTest {
                 .doesNotThrowAnyException();
     }
 
+    // [상황] 빠른 검사에서 바닥(BOT) 사진이 빠졌고, 또 BOT을 "뒤집지 못함"으로 건너뛰려 한다.
+    // [기대] 빠진 면 BOT으로 409를 내고, BOT은 필수 면이라 건너뛰기도 400으로 거절한다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등), 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("빠른 검사 세트에서 BOT이 빠지면 409 CAPTURE_FACES_MISSING, BOT은 건너뛸 수도 없다")
     void quickMissingBottom() {
@@ -76,6 +92,9 @@ class QuickSetDomainTest {
                         e -> assertThat(e.code()).isEqualTo(ErrorCode.VALIDATION_FAILED));
     }
 
+    // [상황] 빠른 검사에서 윗면(TOP)이 CAM1 사진만 올라오고 CAM2 사진이 없다.
+    // [기대] 반만 찍힌 것이므로 TOP을 빠진 면으로 보고 409를 낸다.
+    //        ※ 응답 코드: 409 = 지금 상태와 맞지 않아 거절(이미 있음·순서 어긋남 등)
     @Test
     @DisplayName("빠른 검사 세트에서 한 면이 CAM1으로만 올라오면 반만 찍힌 것이라 409 CAPTURE_FACES_MISSING")
     void quickNeedsBothCameras() {
@@ -88,6 +107,9 @@ class QuickSetDomainTest {
                 });
     }
 
+    // [상황] 폰 촬영으로 빠른 검사 세트를 만들려 한다.
+    // [기대] 빠른 검사는 부스 전용이라 400(profile 칸 오류)으로 거절한다.
+    //        ※ 응답 코드: 400 = 요청 내용이 형식에 맞지 않음
     @Test
     @DisplayName("폰으로 빠른 검사 세트를 만들면 400(profile)")
     void quickPhoneRejected() {
@@ -99,6 +121,9 @@ class QuickSetDomainTest {
                 });
     }
 
+    // [상황] 빠른 검사 세트를 완료 전과 완료 후에 "바로 등급" 처리하고, 전체 검사 세트에도 같은 처리를 해 본다.
+    // [기대] 빠른 검사는 완료(UPLOADED) 뒤에만 정합 단계 없이 바로 등급(GRADED)이 된다.
+    //        완료 전이거나 전체 검사 세트면 거절한다(전체 검사는 면 펼치기·정합을 거쳐야 함).
     @Test
     @DisplayName("빠른 검사 세트만 완료(UPLOADED)에서 정합 없이 바로 GRADED가 된다")
     void quickGradedFromUploaded() {
@@ -113,6 +138,7 @@ class QuickSetDomainTest {
         assertThatThrownBy(full::markGradedQuick).isInstanceOf(IllegalStateException.class);
     }
 
+    // 테스트 도구: 빠른 검사 최소 사진 목록(BOT·TOP × CAM1·CAM2, L1)을 만든다.
     static List<PhotoSpec> quickSpecs() {
         List<PhotoSpec> specs = new ArrayList<>();
         for (Face face : List.of(Face.BOT, Face.TOP)) {
@@ -122,6 +148,7 @@ class QuickSetDomainTest {
         return specs;
     }
 
+    // 테스트 도구: 위 사진들이 실제로 올라온 상태(올라온 파일의 SHA-256)를 만든다.
     private static List<PhotoState> quickStates(String actual) {
         List<PhotoState> states = new ArrayList<>();
         for (Face face : List.of(Face.BOT, Face.TOP)) {
@@ -131,6 +158,7 @@ class QuickSetDomainTest {
         return states;
     }
 
+    // 테스트 도구: 시험용 고정 촬영 시각.
     private static OffsetDateTime now() {
         return OffsetDateTime.parse("2026-11-05T10:00:00+09:00");
     }

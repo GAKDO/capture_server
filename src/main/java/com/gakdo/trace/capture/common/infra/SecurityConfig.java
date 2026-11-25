@@ -50,6 +50,8 @@ public class SecurityConfig {
                                 "/api/v1/captures/sets/*/complete")
                         .hasAnyRole(BOOTH, CUSTOMER)
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/sets/*").hasAnyRole(ADMIN, CUSTOMER)
+                        // 렌탈 검사 방식(11/13): 부스·관리자·고객. 렌탈 범위는 서비스가 Caller로 본다
+                        .requestMatchers(HttpMethod.GET, "/api/v1/captures/rentals/*/profile").hasAnyRole(ADMIN, BOOTH, CUSTOMER)
                         .requestMatchers(HttpMethod.POST, "/api/v1/captures/sets/*/detections").hasRole(BOOTH)
                         .requestMatchers(HttpMethod.GET, "/api/v1/captures/checkpoints/*/inspection",
                                 "/api/v1/captures/checkpoints/*/media", "/api/v1/captures/checkpoints/*/settlement")
