@@ -454,7 +454,7 @@ class CaptureSetApiTest extends WebTestBase {
         String mismatched = boothBody(List.of()).replace("\"rentalId\":\"" + RENTAL + "\"",
                 "\"rentalId\":\"" + OTHER_RENTAL + "\"");
         // (도구) contains(글자) = 그 글자가 들어 있어야 통과
-        // 준비 점검: 바꿔치기가 실제로 됐는지(본문에 다른 렌탈 ID가 있는지) 먼저 확인한다
+        // 준비: (먼저 확인) 바꿔치기가 실제로 됐는지(본문에 다른 렌탈 ID가 있는지) 먼저 확인한다
         assertThat(mismatched).contains(OTHER_RENTAL);
         // 실행: 이미 다른 렌탈이 쓰는 시점에 다른 렌탈로 세트를 만들어 달라고 요청한다
         perform(post("/api/v1/captures/sets").with(booth()), mismatched)
